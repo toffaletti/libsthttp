@@ -30,7 +30,7 @@ typedef struct http_response {
 extern void http_request_init(http_request *req);
 extern void http_request_parser_init(http_request *req, http_parser *p);
 extern void http_request_clear(http_request *req);
-extern void http_request_print(http_request *req);
+extern void http_request_debug_print(http_request *req);
 extern void http_request_fwrite(http_request *req, FILE *f);
 
 extern void http_request_set_header(http_request *req,
@@ -40,7 +40,8 @@ extern void http_request_free(http_request *req);
 
 /* http_response */
 
-extern void http_response_init(http_response *resp);
+extern void http_response_init_200_OK(http_response *resp);
+extern void http_response_init(http_response *resp, const gchar *code, const gchar *reason);
 extern GString *http_response_data(http_response *resp);
 extern void http_response_set_header(http_response *resp,
   const gchar *field, const gchar *value);

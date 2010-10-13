@@ -40,7 +40,7 @@ void *handle_connection(void *arg) {
     if (http_parser_is_finished(&parser) &&
       !http_parser_has_error(&parser))
     {
-      http_request_print(&req);
+      http_request_debug_print(&req);
       printf("\n");
       http_request_fwrite(&req, stdout);
 
@@ -48,9 +48,7 @@ void *handle_connection(void *arg) {
         size_t content_length = strtoull(g_datalist_get_data(
           &req.headers, "CONTENT_LENGTH"), NULL, 0);
         http_response resp;
-        http_response_init(&resp);
-        resp.status_code = g_string_chunk_insert(resp.chunk, "100");
-        resp.reason = g_string_chunk_insert(resp.chunk, "Continue");
+        http_response_init(&resp, "100", "Continue");
         printf("sending 100-continue\n");
         GString *resp_data = http_response_data(&resp);
         printf("resp data: %s", resp_data->str);
@@ -66,7 +64,7 @@ void *handle_connection(void *arg) {
         }
       }
       http_response resp;
-      http_response_init(&resp);
+      http_response_init_200_OK(&resp);
       http_response_set_header(&resp, "Content-type", "text/html");
       http_response_set_header(&resp, "Connection", "close");
       http_response_set_body(&resp, "<H2>It worked!</H2>");

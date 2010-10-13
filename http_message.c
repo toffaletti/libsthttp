@@ -104,7 +104,7 @@ static void http_request_print_headers(GQuark key_id, gpointer data, gpointer us
   printf(" %s : %s\n", g_quark_to_string(key_id), (const gchar *)data);
 }
 
-void http_request_print(http_request *req) {
+void http_request_debug_print(http_request *req) {
   printf("method: %s\n", req->method);
   printf("uri: %s\n", req->uri);
   printf("fragment: %s\n", req->fragment);
@@ -158,12 +158,16 @@ void http_request_free(http_request *req) {
   g_string_chunk_free(req->chunk);
 }
 
-void http_response_init(http_response *resp) {
-  resp->chunk = g_string_chunk_new(1024 * 1024);
+void http_response_init_200_OK(http_response *resp) {
+  http_response_init(resp, "200", "OK");
+}
+
+void http_response_init(http_response *resp, const gchar *code, const gchar *reason) {
+  resp->chunk = g_string_chunk_new(1024);
   g_datalist_init(&resp->headers);
   resp->http_version = g_string_chunk_insert(resp->chunk, "HTTP/1.1");
-  resp->status_code = g_string_chunk_insert(resp->chunk, "200");
-  resp->reason = g_string_chunk_insert(resp->chunk, "OK");
+  resp->status_code = g_string_chunk_insert(resp->chunk, code);
+  resp->reason = g_string_chunk_insert(resp->chunk, reason);
   resp->body = NULL;
   resp->body_length = 0;
 }
