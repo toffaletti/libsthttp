@@ -12,7 +12,7 @@ if(RAGEL)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR})
     ragel_gen(http11_parser)
 
-    add_library(http11 STATIC ${CMAKE_CURRENT_BINARY_DIR}/http11_parser.c)
+    add_library(http11client STATIC ${CMAKE_CURRENT_BINARY_DIR}/http11_parser.c)
 else(RAGEL)
     message("ragel not found. not building libhttp11")
 endif(RAGEL)

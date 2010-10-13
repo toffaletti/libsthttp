@@ -1,6 +1,15 @@
 #include "http_message.h"
 #include <string.h>
 
+/* TODO 
+ * - use string pool for header names g_string_chunk_insert_const
+ * - use string pool for other common strings like OK, 200, HTTP/1.1
+ * - share string pool across http_request/response objects?
+ * - perhaps use a linked list for headers. GData doesn't seem quite right
+ * - add function to serialize to iovec for speedy writes
+ * - need parser for response also (client side)
+ */
+
 static void request_method(void *data, const char *at, size_t length) {
   http_request *msg = (http_request *)data;
   msg->method = g_string_chunk_insert_len(msg->chunk, at, length);
@@ -33,7 +42,7 @@ static void http_version(void *data, const char *at, size_t length) {
 
 static void header_done(void *data, const char *at, size_t length) {
   http_request *req = (http_request *)data;
-  // set body
+  /* set body */
   if (length) {
     req->body = at;
     req->body_length = length;
@@ -67,7 +76,7 @@ static void http_field(void *data, const char *field,
 }
 
 void http_request_init(http_request *req) {
-  req->chunk = g_string_chunk_new(1024 * 1024);
+  req->chunk = g_string_chunk_new(1024 * 4);
   req->headers = NULL;
   http_request_clear(req);
   g_datalist_init(&req->headers);
@@ -158,18 +167,94 @@ void http_request_free(http_request *req) {
   g_string_chunk_free(req->chunk);
 }
 
+
+/* http_response */
+
+static void http_field_cl(void *data, const char *field,
+  size_t flen, const char *value, size_t vlen)
+{
+  http_response *resp = (http_response *)data;
+  /* cast away const then temporarily NULL terminate */
+  gchar *f = (gchar *)field;
+  gchar *v = (gchar *)value;
+  /* save character being replaced by NULL */
+  gchar svf = f[flen];
+  gchar vvf = v[vlen];
+  f[flen] = 0;
+  v[vlen] = 0;
+  /* TODO: need to normalize header. for example, convert to all caps */
+  http_response_set_header(resp, field, value);
+  /* restore saved character */
+  f[flen] = svf;
+  v[vlen] = vvf;
+}
+
+static void reason_phrase_cl(void *data, const char *at, size_t length) {
+  http_response *resp = (http_response *)data;
+  resp->reason = g_string_chunk_insert_len(resp->chunk, at, length);
+}
+
+static void status_code_cl(void *data, const char *at, size_t length) {
+  http_response *resp = (http_response *)data;
+  resp->status_code = g_string_chunk_insert_len(resp->chunk, at, length);
+}
+
+static void chunk_size_cl(void *data, const char *at, size_t length) {
+  http_response *resp = (http_response *)data;
+  /* TODO: handle chunks */
+}
+
+static void http_version_cl(void *data, const char *at, size_t length) {
+  http_response *resp = (http_response *)data;
+  resp->http_version = g_string_chunk_insert_len(resp->chunk, at, length);
+}
+
+static void header_done_cl(void *data, const char *at, size_t length) {
+  http_response *resp = (http_response *)data;
+  /* set body */
+  /* TODO: the length is not right here */
+  /* printf("HEADER DONE: %zu [%s]\n", length, at); */
+  if (at || length) {
+    resp->body = at;
+    resp->body_length = length;
+  }
+}
+
+static void last_chunk_cl(void *data, const char *at, size_t length) {
+  http_response *resp = (http_response *)data;
+  /* TODO: handle chunks */
+}
+
 void http_response_init_200_OK(http_response *resp) {
   http_response_init(resp, "200", "OK");
 }
 
 void http_response_init(http_response *resp, const gchar *code, const gchar *reason) {
-  resp->chunk = g_string_chunk_new(1024);
+  resp->chunk = g_string_chunk_new(1024 * 4);
   g_datalist_init(&resp->headers);
   resp->http_version = g_string_chunk_insert(resp->chunk, "HTTP/1.1");
   resp->status_code = g_string_chunk_insert(resp->chunk, code);
   resp->reason = g_string_chunk_insert(resp->chunk, reason);
   resp->body = NULL;
   resp->body_length = 0;
+}
+
+void http_response_parser_init(http_response *resp, httpclient_parser *p) {
+  resp->chunk = g_string_chunk_new(1024 * 4);
+  g_datalist_init(&resp->headers);
+  resp->http_version = NULL;
+  resp->status_code = NULL;
+  resp->reason = NULL;
+  resp->body = NULL;
+  resp->body_length = 0;
+  p->data = resp;
+  p->http_field = http_field_cl;
+  p->reason_phrase = reason_phrase_cl;
+  p->status_code = status_code_cl;
+  p->chunk_size = chunk_size_cl;
+  p->http_version = http_version_cl;
+  p->header_done = header_done_cl;
+  p->last_chunk = last_chunk_cl;
 }
 
 void http_response_set_header(http_response *resp,
@@ -199,7 +284,7 @@ GString *http_response_data(http_response *resp) {
   GString *s = g_string_sized_new(1024);
   g_string_printf(s, "%s %s %s\r\n", resp->http_version,
     resp->status_code, resp->reason);
-  // TODO: maybe add required headers like content-length
+  /* TODO: maybe add required headers like content-length */
   g_datalist_foreach(&resp->headers, http_response_data_headers, s);
   g_string_append_printf(s, "\r\n");
   return s;

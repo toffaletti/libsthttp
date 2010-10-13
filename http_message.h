@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <glib.h>
 #include "http11/http11_parser.h"
+#include "http11_client/http11_parser.h"
 
 typedef struct http_request {
   GStringChunk *chunk; /* string pool */
@@ -40,6 +41,7 @@ extern void http_request_free(http_request *req);
 
 /* http_response */
 
+extern void http_response_parser_init(http_response *resp, httpclient_parser *p);
 extern void http_response_init_200_OK(http_response *resp);
 extern void http_response_init(http_response *resp, const gchar *code, const gchar *reason);
 extern GString *http_response_data(http_response *resp);
