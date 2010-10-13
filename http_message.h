@@ -36,6 +36,8 @@ extern void http_request_fwrite(http_request *req, FILE *f);
 extern void http_request_set_header(http_request *req,
   const gchar *field, const gchar *value);
 
+extern void http_request_free(http_request *req);
+
 /* http_response */
 
 extern void http_response_init(http_response *resp);

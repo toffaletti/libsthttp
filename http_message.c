@@ -68,6 +68,7 @@ static void http_field(void *data, const char *field,
 
 void http_request_init(http_request *req) {
   req->chunk = g_string_chunk_new(1024 * 1024);
+  req->headers = NULL;
   http_request_clear(req);
   g_datalist_init(&req->headers);
 }
@@ -150,6 +151,11 @@ void http_request_fwrite(http_request *req, FILE *f) {
   fprintf(f, "%s %s %s\r\n", req->http_version, req->method, req->uri);
   g_datalist_foreach(&req->headers, http_request_write_headers, f);
   fprintf(f, "\r\n");
+}
+
+void http_request_free(http_request *req) {
+  g_datalist_clear(&req->headers);
+  g_string_chunk_free(req->chunk);
 }
 
 void http_response_init(http_response *resp) {

@@ -80,7 +80,7 @@ void *handle_connection(void *arg) {
     http_request_clear(&req);
   }
 CLOSE:
-  g_string_chunk_free(req.chunk);
+  http_request_free(&req);
   st_netfd_close(client_nfd);
   g_free(buf);
   return NULL;
