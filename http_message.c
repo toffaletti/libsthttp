@@ -8,6 +8,7 @@
  * - perhaps use a linked list for headers. GData doesn't seem quite right
  * - add function to serialize to iovec for speedy writes
  * - need parser for response also (client side)
+ * - http://www.jmarshall.com/easy/http/
  */
 
 static void request_method(void *data, const char *at, size_t length) {
@@ -43,6 +44,7 @@ static void http_version(void *data, const char *at, size_t length) {
 static void header_done(void *data, const char *at, size_t length) {
   http_request *req = (http_request *)data;
   /* set body */
+  /* TODO: not sure this logic is right. length might be wrong */
   if (length) {
     req->body = at;
     req->body_length = length;
@@ -202,6 +204,8 @@ static void status_code_cl(void *data, const char *at, size_t length) {
 static void chunk_size_cl(void *data, const char *at, size_t length) {
   http_response *resp = (http_response *)data;
   /* TODO: handle chunks */
+  const gchar *chunk_size = g_string_chunk_insert_len(resp->chunk, at, length);
+  printf("chunk size: %s\n", chunk_size);
 }
 
 static void http_version_cl(void *data, const char *at, size_t length) {
@@ -223,6 +227,7 @@ static void header_done_cl(void *data, const char *at, size_t length) {
 static void last_chunk_cl(void *data, const char *at, size_t length) {
   http_response *resp = (http_response *)data;
   /* TODO: handle chunks */
+  printf("last chunk: %zu [%s]\n", length, at);
 }
 
 void http_response_init_200_OK(http_response *resp) {

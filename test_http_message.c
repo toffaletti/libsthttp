@@ -325,6 +325,72 @@ static void test_http_response_parser_p1(void) {
   g_free(data);
 }
 
+static void test_http_response_parser_chunked(void) {
+  http_response resp;
+  httpclient_parser parser;
+  http_response_parser_init(&resp, &parser);
+  httpclient_parser_init(&parser);
+  /* borrowed from http://en.wikipedia.org/wiki/Chunked_transfer_encoding */
+  static const char *sdata =
+  "HTTP/1.1 200 OK\r\n"
+  "Content-Type: text/plain\r\n"
+  "Transfer-Encoding: chunked\r\n\r\n"
+  "25\r\n"
+  "This is the data in the first chunk\r\n"
+  "1C\r\n"
+  "and this is the second one\r\n"
+  "3\r\n"
+  "con"
+  "8\r\n"
+  "sequence"
+  "0\r\n"
+  "\r\n";
+  char *data = g_strdup(sdata);
+  httpclient_parser_execute(&parser, data, strlen(data), 0);
+  g_assert(!httpclient_parser_has_error(&parser));
+  g_assert(httpclient_parser_is_finished(&parser));
+
+  g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
+  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(g_strcmp0("OK", resp.reason) == 0);
+  g_assert(g_strcmp0("text/plain", g_datalist_get_data(&resp.headers, "Content-Type")) == 0);
+  g_assert(g_strcmp0("chunked", g_datalist_get_data(&resp.headers, "Transfer-Encoding")) == 0);
+
+  /* reset the parse for the chunked part */
+  httpclient_parser_init(&parser);
+  httpclient_parser_execute(&parser, resp.body, strlen(resp.body), 0);
+  g_assert(!httpclient_parser_has_error(&parser));
+  g_assert(httpclient_parser_is_finished(&parser));
+
+  httpclient_parser_init(&parser);
+  httpclient_parser_execute(&parser, resp.body+37, strlen(resp.body+37), 0);
+  g_assert(!httpclient_parser_has_error(&parser));
+  g_assert(httpclient_parser_is_finished(&parser));
+
+  httpclient_parser_init(&parser);
+  httpclient_parser_execute(&parser, resp.body+28, strlen(resp.body)+28, 0);
+  g_assert(!httpclient_parser_has_error(&parser));
+  g_assert(httpclient_parser_is_finished(&parser));
+
+  httpclient_parser_init(&parser);
+  httpclient_parser_execute(&parser, resp.body+3, strlen(resp.body+3), 0);
+  g_assert(!httpclient_parser_has_error(&parser));
+  g_assert(httpclient_parser_is_finished(&parser));
+
+  httpclient_parser_init(&parser);
+  httpclient_parser_execute(&parser, resp.body+8, strlen(resp.body+8), 0);
+  g_assert(!httpclient_parser_has_error(&parser));
+  g_assert(httpclient_parser_is_finished(&parser));
+
+  httpclient_parser_init(&parser);
+  httpclient_parser_execute(&parser, resp.body+0, strlen(resp.body+0), 0);
+  g_assert(!httpclient_parser_has_error(&parser));
+  g_assert(httpclient_parser_is_finished(&parser));
+
+  http_response_free(&resp);
+  g_free(data);
+}
+
 int main(int argc, char *argv[]) {
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/http/request/init", test_http_request_init);
@@ -342,5 +408,6 @@ int main(int argc, char *argv[]) {
   g_test_add_func("/http/response/parser/init", test_http_response_parser_init);
   g_test_add_func("/http/response/parser/p0", test_http_response_parser_p0);
   g_test_add_func("/http/response/parser/p1", test_http_response_parser_p1);
+  g_test_add_func("/http/response/parser/chunked", test_http_response_parser_chunked);
   return g_test_run();
 }
