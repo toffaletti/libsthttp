@@ -361,31 +361,43 @@ static void test_http_response_parser_chunked(void) {
   httpclient_parser_execute(&parser, resp.body, strlen(resp.body), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
+  g_assert(resp.chunk_size == 37);
+  g_assert(resp.last_chunk == FALSE);
 
   httpclient_parser_init(&parser);
   httpclient_parser_execute(&parser, resp.body+37, strlen(resp.body+37), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
+  g_assert(resp.chunk_size == 28);
+  g_assert(resp.last_chunk == FALSE);
 
   httpclient_parser_init(&parser);
   httpclient_parser_execute(&parser, resp.body+28, strlen(resp.body)+28, 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
+  g_assert(resp.chunk_size == 3);
+  g_assert(resp.last_chunk == FALSE);
 
   httpclient_parser_init(&parser);
   httpclient_parser_execute(&parser, resp.body+3, strlen(resp.body+3), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
+  g_assert(resp.chunk_size == 8);
+  g_assert(resp.last_chunk == FALSE);
 
   httpclient_parser_init(&parser);
   httpclient_parser_execute(&parser, resp.body+8, strlen(resp.body+8), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
+  g_assert(resp.chunk_size == 0);
+  g_assert(resp.last_chunk == FALSE);
 
   httpclient_parser_init(&parser);
   httpclient_parser_execute(&parser, resp.body+0, strlen(resp.body+0), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
+  g_assert(resp.chunk_size == 0);
+  g_assert(resp.last_chunk == TRUE);
 
   http_response_free(&resp);
   g_free(data);
