@@ -126,6 +126,40 @@ static void test_http_request_parser_p3(void) {
   g_free(data);
 }
 
+static void test_http_request_parser_proxy_http12(void) {
+  http_request req;
+  http_parser parser;
+  http_request_parser_init(&req, &parser);
+  static const char *sdata =
+  "GET http://example.com:9182/test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
+  "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
+  "Host: localhost:8080\r\n"
+  "Accept: */*\r\n\r\n";
+  http_parser_init(&parser);
+  char *data = g_strdup(sdata);
+  /* parse all in one go */
+  http_parser_execute(&parser, data, strlen(data), 0);
+  g_assert(!http_parser_has_error(&parser));
+  g_assert(http_parser_is_finished(&parser));
+  g_assert(g_strcmp0(req.method, "GET") == 0);
+  g_assert(g_strcmp0(req.uri, "http://example.com:9182/test/this?thing=1&stuff=2&fun&good") == 0);
+  /* path is NULL when fully qualified uri is used */
+  /* TODO: maybe add support for full uri parsing */
+  g_assert(req.path == NULL);
+  g_assert(req.query_string == NULL);
+  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req.body, NULL) == 0);
+  g_assert(req.body_length == 0);
+
+  g_assert(g_strcmp0(g_datalist_get_data(&req.headers, "USER_AGENT"),
+    "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
+  g_assert(g_strcmp0(g_datalist_get_data(&req.headers, "HOST"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(g_datalist_get_data(&req.headers, "ACCEPT"), "*/*") == 0);
+
+  http_request_free(&req);
+  g_free(data);
+}
+
 static void test_http_request_clear(void) {
   http_request req;
   http_parser parser;
@@ -411,6 +445,7 @@ int main(int argc, char *argv[]) {
   g_test_add_func("/http/request/parser/p1", test_http_request_parser_p1);
   g_test_add_func("/http/request/parser/p2", test_http_request_parser_p2);
   g_test_add_func("/http/request/parser/p3", test_http_request_parser_p3);
+  g_test_add_func("/http/request/parser/proxy_http12", test_http_request_parser_proxy_http12);
   g_test_add_func("/http/request/clear", test_http_request_clear);
 
   g_test_add_func("/http/response/init", test_http_response_init);
