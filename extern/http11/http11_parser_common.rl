@@ -1,5 +1,5 @@
 %%{
-  
+
   machine http_parser_common;
 
 #### HTTP PROTOCOL GRAMMAR

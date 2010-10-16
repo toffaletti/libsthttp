@@ -14,3 +14,10 @@ target_link_libraries(httpd glib-2.0 st http11 http11client)
 
 add_executable(test-http-message test_http_message.c http_message.c)
 target_link_libraries(test-http-message glib-2.0 http11 http11client)
+
+add_executable(adns-st adns-st.c)
+target_link_libraries(adns-st glib-2.0 st adns)
+
+add_executable(cares-st cares-st.c)
+target_link_libraries(cares-st glib-2.0 st cares)
+
