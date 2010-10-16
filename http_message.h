@@ -24,6 +24,8 @@ typedef struct http_response {
   gchar *reason;
   const gchar *body;
   size_t body_length;
+  size_t chunk_size;
+  int last_chunk;
 } http_response;
 
 /* http_request */

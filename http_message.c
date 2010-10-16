@@ -1,5 +1,6 @@
 #include "http_message.h"
 #include <string.h>
+#include <stdlib.h>
 
 /* TODO 
  * - use string pool for header names g_string_chunk_insert_const
@@ -203,9 +204,8 @@ static void status_code_cl(void *data, const char *at, size_t length) {
 
 static void chunk_size_cl(void *data, const char *at, size_t length) {
   http_response *resp = (http_response *)data;
-  /* TODO: handle chunks */
   const gchar *chunk_size = g_string_chunk_insert_len(resp->chunk, at, length);
-  printf("chunk size: %s\n", chunk_size);
+  resp->chunk_size = strtoull(chunk_size, NULL, 16);
 }
 
 static void http_version_cl(void *data, const char *at, size_t length) {
@@ -226,8 +226,7 @@ static void header_done_cl(void *data, const char *at, size_t length) {
 
 static void last_chunk_cl(void *data, const char *at, size_t length) {
   http_response *resp = (http_response *)data;
-  /* TODO: handle chunks */
-  printf("last chunk: %zu [%s]\n", length, at);
+  resp->last_chunk = TRUE;
 }
 
 void http_response_init_200_OK(http_response *resp) {
@@ -242,6 +241,8 @@ void http_response_init(http_response *resp, const gchar *code, const gchar *rea
   resp->reason = g_string_chunk_insert(resp->chunk, reason);
   resp->body = NULL;
   resp->body_length = 0;
+  resp->chunk_size = 0;
+  resp->last_chunk = FALSE;
 }
 
 void http_response_parser_init(http_response *resp, httpclient_parser *p) {
@@ -252,6 +253,8 @@ void http_response_parser_init(http_response *resp, httpclient_parser *p) {
   resp->reason = NULL;
   resp->body = NULL;
   resp->body_length = 0;
+  resp->chunk_size = 0;
+  resp->last_chunk = FALSE;
   p->data = resp;
   p->http_field = http_field_cl;
   p->reason_phrase = reason_phrase_cl;
