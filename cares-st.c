@@ -78,7 +78,7 @@ void pollfd_to_fd_sets(struct pollfd *fds, int nfds, fd_set *read_fds, fd_set *w
   }
 }
 
-static void callback(void *arg, int status, int timeouts, struct hostent *host) {
+static void gethostbyname_callback(void *arg, int status, int timeouts, struct hostent *host) {
   struct hostent **_host = (struct hostent **)arg;
 
   if (status != ARES_SUCCESS)
@@ -90,19 +90,14 @@ static void callback(void *arg, int status, int timeouts, struct hostent *host) 
   copy_hostent(host, _host);
 }
 
-void *do_lookup(void *arg) {
-  ares_channel channel;
+int st_gethostbyname_r(const char *name, struct hostent **host) {
   int status;
-
+  ares_channel channel;
+  *host = NULL;
   status = ares_init(&channel);
-  if (status != ARES_SUCCESS)
-  {
-    fprintf(stderr, "ares_init: %s\n", ares_strerror(status));
-    return (void*)1;
-  }
+  if (status != ARES_SUCCESS) goto cleanup;
 
-  struct hostent *host;
-  ares_gethostbyname(channel, "google.com", AF_INET, callback, &host);
+  ares_gethostbyname(channel, name, AF_INET, gethostbyname_callback, host);
 
   fd_set read_fds, write_fds;
   struct timeval *tvp, tv;
@@ -112,24 +107,34 @@ void *do_lookup(void *arg) {
     FD_ZERO(&read_fds);
     FD_ZERO(&write_fds);
     max_fd = ares_fds(channel, &read_fds, &write_fds);
-    printf("max_fd: %u\n", max_fd);
     if (max_fd == 0)
       break;
 
     struct pollfd *fds;
     fd_sets_to_pollfd(&read_fds, &write_fds, max_fd, &fds, &nfds);
     tvp = ares_timeout(channel, NULL, &tv);
-    //select(nfds, &read_fds, &write_fds, NULL, tvp);
-    // TODO: get timeout working
+    /*select(nfds, &read_fds, &write_fds, NULL, tvp); */
+    /* TODO: get timeout working */
     if (st_poll(fds, nfds, ST_UTIME_NO_TIMEOUT) == -1) {
-      fprintf(stderr, "poll error\n");
-      break;
+      /* TODO: handle errors here */
     }
     pollfd_to_fd_sets(fds, nfds, &read_fds, &write_fds);
     free(fds);
     ares_process(channel, &read_fds, &write_fds);
   }
+cleanup:
+  ares_destroy(channel);
+  return status;
+}
 
+void *do_lookup(void *arg) {
+
+  struct hostent *host;
+
+  int status;
+  status = st_gethostbyname_r("google.com", &host);
+
+  printf("thread: %s\n", (char *)arg);
   char **p = NULL;
   for (p = host->h_addr_list; *p; p++)
   {
@@ -141,7 +146,6 @@ void *do_lookup(void *arg) {
 
   ares_free_hostent(host);
 
-  ares_destroy(channel);
   return NULL;
 }
 
@@ -155,8 +159,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  st_thread_t t = st_thread_create(do_lookup, NULL, 1, 1024 * 128);
-  st_thread_t t2 = st_thread_create(do_lookup, NULL, 1, 1024 * 128);
+  st_thread_t t = st_thread_create(do_lookup, "A", 1, 1024 * 128);
+  st_thread_t t2 = st_thread_create(do_lookup, "B", 1, 1024 * 128);
   st_thread_join(t, NULL);
   st_thread_join(t2, NULL);
 
