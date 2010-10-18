@@ -2,6 +2,11 @@
 #include <string.h>
 #include <stdlib.h>
 
+typedef struct message_header {
+  gchar *name;
+  gchar *value;
+} message_header;
+
 /* TODO 
  * - use string pool for header names g_string_chunk_insert_const
  * - use string pool for other common strings like OK, 200, HTTP/1.1
@@ -11,6 +16,28 @@
  * - need parser for response also (client side)
  * - http://www.jmarshall.com/easy/http/
  */
+
+/*
+ * normalize http11 message header field names.
+ */
+static gchar *normalize_header_name(gchar *field) {
+  int first_letter = 1;
+  for (gchar *p = field; *p != 0; p++) {
+    if (!first_letter) {
+      *p = g_ascii_tolower(*p);
+      if (*p == '_') {
+        *p = '-';
+        first_letter = 1;
+      } else if (*p == '-') {
+        first_letter = 1;
+      }
+    } else {
+      *p = g_ascii_toupper(*p);
+      first_letter = 0;
+    }
+  }
+  return field;
+}
 
 static void request_method(void *data, const char *at, size_t length) {
   http_request *msg = (http_request *)data;
@@ -55,9 +82,11 @@ static void header_done(void *data, const char *at, size_t length) {
 void http_request_set_header(http_request *req,
   const gchar *field, const gchar *value)
 {
-  const gchar *h = g_intern_string(field);
-  gchar *v = g_string_chunk_insert(req->chunk, value);
-  g_datalist_set_data(&req->headers, h, v);
+  message_header *hdr = g_slice_new(message_header);
+  hdr->name = g_string_chunk_insert(req->chunk, field);
+  normalize_header_name(hdr->name);
+  hdr->value = g_string_chunk_insert(req->chunk, value);
+  g_queue_push_tail(req->headers, hdr);
 }
 
 static void http_field(void *data, const char *field,
@@ -82,7 +111,7 @@ void http_request_init(http_request *req) {
   req->chunk = g_string_chunk_new(1024 * 4);
   req->headers = NULL;
   http_request_clear(req);
-  g_datalist_init(&req->headers);
+  req->headers = g_queue_new();
 }
 
 void http_request_parser_init(http_request *req, http_parser *p) {
@@ -98,6 +127,11 @@ void http_request_parser_init(http_request *req, http_parser *p) {
   p->header_done = header_done;
 }
 
+static void free_message_headers(gpointer data, gpointer user_data) {
+  (void)user_data;
+  g_slice_free(message_header, data);
+}
+
 void http_request_clear(http_request *req) {
   req->method = NULL;
   req->uri = NULL;
@@ -107,13 +141,17 @@ void http_request_clear(http_request *req) {
   req->http_version = NULL;
   req->body = NULL;
   req->body_length = 0;
-  g_datalist_clear(&req->headers);
+  if (req->headers) {
+    g_queue_foreach(req->headers, free_message_headers, NULL);
+    g_queue_clear(req->headers);
+  }
   g_string_chunk_clear(req->chunk);
 }
 
-static void http_request_print_headers(GQuark key_id, gpointer data, gpointer user_data) {
+static void http_request_print_headers(gpointer data, gpointer user_data) {
   (void)user_data;
-  printf(" %s : %s\n", g_quark_to_string(key_id), (const gchar *)data);
+  message_header *hdr = (message_header *)data;
+  printf(" %s : %s\n", hdr->name, hdr->value);
 }
 
 void http_request_debug_print(http_request *req) {
@@ -124,56 +162,43 @@ void http_request_debug_print(http_request *req) {
   printf("query: %s\n", req->query_string);
   printf("http version: %s\n", req->http_version);
   printf("headers:\n");
-  g_datalist_foreach(&req->headers, http_request_print_headers, NULL);
+  g_queue_foreach(req->headers, http_request_print_headers, NULL);
   printf("length: %zu\n", req->body_length);
   printf("body: %s\n", req->body);
 }
 
-/*
- * turn http11 formatted header field names into valid http header fields.
- * returns newly allocated string.
- */
-static gchar *http_format_field_name(const gchar *infield) {
-  gchar *field = g_strdup(infield);
-  int first_letter = 1;
-  for (gchar *p = field; *p != 0; p++) {
-    if (!first_letter) {
-      *p = g_ascii_tolower(*p);
-      if (*p == '_') {
-        *p = '-';
-        first_letter = 1;
-      } else if (*p == '-') {
-        first_letter = 1;
-      }
-    } else {
-      first_letter = 0;
-    }
-  }
-  return field;
-}
-
-static void http_request_write_headers(GQuark key_id, gpointer data, gpointer user_data) {
+static void http_request_write_headers(gpointer data, gpointer user_data) {
   FILE *f = (FILE *)user_data;
-  gchar *field = http_format_field_name(g_quark_to_string(key_id));
-  fprintf(f, "%s: %s\r\n", field, (const gchar *)data);
-  g_free(field);
+  message_header *hdr = (message_header *)data;
+  fprintf(f, "%s: %s\r\n", hdr->name, hdr->value);
 }
 
 void http_request_fwrite(http_request *req, FILE *f) {
   fprintf(f, "%s %s %s\r\n", req->http_version, req->method, req->uri);
-  g_datalist_foreach(&req->headers, http_request_write_headers, f);
+  g_queue_foreach(req->headers, http_request_write_headers, f);
   fprintf(f, "\r\n");
 }
 
 void http_request_free(http_request *req) {
-  g_datalist_clear(&req->headers);
+  g_queue_foreach(req->headers, free_message_headers, NULL);
+  g_queue_free(req->headers);
   g_string_chunk_free(req->chunk);
+}
+
+static gint header_name_compare(gconstpointer a, gconstpointer b) {
+  const message_header *am = (message_header *)a;
+  const gchar *field = (const gchar *)b;
+  return g_strcmp0(field, am->name);
 }
 
 const gchar *http_request_get_header(http_request *req,
   const gchar *field)
 {
-  return g_datalist_get_data(&req->headers, field);
+  GList *l = g_queue_find_custom(req->headers, field, header_name_compare);
+  if (l) {
+    return ((message_header *)l->data)->value;
+  }
+  return NULL;
 }
 
 unsigned long long http_request_get_header_ull(http_request *req,
@@ -248,7 +273,7 @@ void http_response_init_200_OK(http_response *resp) {
 
 void http_response_init(http_response *resp, const gchar *code, const gchar *reason) {
   resp->chunk = g_string_chunk_new(1024 * 4);
-  g_datalist_init(&resp->headers);
+  resp->headers = g_queue_new();
   resp->http_version = g_string_chunk_insert(resp->chunk, "HTTP/1.1");
   resp->status_code = g_string_chunk_insert(resp->chunk, code);
   resp->reason = g_string_chunk_insert(resp->chunk, reason);
@@ -260,7 +285,7 @@ void http_response_init(http_response *resp, const gchar *code, const gchar *rea
 
 void http_response_parser_init(http_response *resp, httpclient_parser *p) {
   resp->chunk = g_string_chunk_new(1024 * 4);
-  g_datalist_init(&resp->headers);
+  resp->headers = g_queue_new();
   resp->http_version = NULL;
   resp->status_code = NULL;
   resp->reason = NULL;
@@ -281,9 +306,28 @@ void http_response_parser_init(http_response *resp, httpclient_parser *p) {
 void http_response_set_header(http_response *resp,
   const gchar *field, const gchar *value)
 {
-  const gchar *h = g_intern_string(field);
-  gchar *v = g_string_chunk_insert(resp->chunk, value);
-  g_datalist_set_data(&resp->headers, h, v);
+  message_header *hdr = g_slice_new(message_header);
+  hdr->name = g_string_chunk_insert(resp->chunk, field);
+  normalize_header_name(hdr->name);
+  hdr->value = g_string_chunk_insert(resp->chunk, value);
+  g_queue_push_tail(resp->headers, hdr);
+}
+
+const gchar *http_response_get_header(http_response *resp,
+  const gchar *field)
+{
+  GList *l = g_queue_find_custom(resp->headers, field, header_name_compare);
+  if (l) {
+    return ((message_header *)l->data)->value;
+  }
+  return NULL;
+}
+
+unsigned long long http_response_get_header_ull(http_response *resp,
+  const gchar *field)
+{
+  return strtoull(
+    http_response_get_header(resp, field), NULL, 0);
 }
 
 void http_response_set_body(http_response *resp, const gchar *body) {
@@ -294,11 +338,10 @@ void http_response_set_body(http_response *resp, const gchar *body) {
   http_response_set_header(resp, "Content-Length", lenstr);
 }
 
-static void http_response_data_headers(GQuark key_id, gpointer data, gpointer user_data) {
+static void message_headers_to_data(gpointer data, gpointer user_data) {
   GString *s = (GString *)user_data;
-  gchar *field = http_format_field_name(g_quark_to_string(key_id));
-  g_string_append_printf(s, "%s: %s\r\n", field, (const gchar *)data);
-  g_free(field);
+  message_header *hdr = (message_header *)data;
+  g_string_append_printf(s, "%s: %s\r\n", hdr->name, hdr->value);
 }
 
 GString *http_response_data(http_response *resp) {
@@ -306,12 +349,13 @@ GString *http_response_data(http_response *resp) {
   g_string_printf(s, "%s %s %s\r\n", resp->http_version,
     resp->status_code, resp->reason);
   /* TODO: maybe add required headers like content-length */
-  g_datalist_foreach(&resp->headers, http_response_data_headers, s);
+  g_queue_foreach(resp->headers, message_headers_to_data, s);
   g_string_append_printf(s, "\r\n");
   return s;
 }
 
 void http_response_free(http_response *resp) {
-  g_datalist_clear(&resp->headers);
+  g_queue_foreach(resp->headers, free_message_headers, NULL);
+  g_queue_free(resp->headers);
   g_string_chunk_free(resp->chunk);
 }

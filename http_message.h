@@ -5,7 +5,7 @@
 
 typedef struct http_request {
   GStringChunk *chunk; /* string pool */
-  GData *headers;
+  GQueue *headers;
   gchar *method;
   gchar *uri;
   gchar *fragment;
@@ -18,7 +18,7 @@ typedef struct http_request {
 
 typedef struct http_response {
   GStringChunk *chunk; /* string pool */
-  GData *headers;
+  GQueue *headers;
   gchar *http_version;
   gchar *status_code;
   gchar *reason;
@@ -53,5 +53,9 @@ extern void http_response_init(http_response *resp, const gchar *code, const gch
 extern GString *http_response_data(http_response *resp);
 extern void http_response_set_header(http_response *resp,
   const gchar *field, const gchar *value);
+extern const gchar *http_response_get_header(http_response *resp,
+  const gchar *field);
+extern unsigned long long http_response_get_header_ull(http_response *resp,
+  const gchar *field);
 extern void http_response_set_body(http_response *resp, const gchar *body);
 extern void http_response_free(http_response *resp);
