@@ -170,6 +170,19 @@ void http_request_free(http_request *req) {
   g_string_chunk_free(req->chunk);
 }
 
+const gchar *http_request_get_header(http_request *req,
+  const gchar *field)
+{
+  return g_datalist_get_data(&req->headers, field);
+}
+
+unsigned long long http_request_get_header_ull(http_request *req,
+  const gchar *field)
+{
+  return strtoull(
+    http_request_get_header(req, field), NULL, 0);
+}
+
 
 /* http_response */
 

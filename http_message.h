@@ -38,6 +38,10 @@ extern void http_request_fwrite(http_request *req, FILE *f);
 
 extern void http_request_set_header(http_request *req,
   const gchar *field, const gchar *value);
+extern const gchar *http_request_get_header(http_request *req,
+  const gchar *field);
+extern unsigned long long http_request_get_header_ull(http_request *req,
+  const gchar *field);
 
 extern void http_request_free(http_request *req);
 

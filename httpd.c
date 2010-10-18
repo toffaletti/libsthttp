@@ -1,7 +1,7 @@
 #include <glib.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -30,7 +30,7 @@ void *handle_connection(void *arg) {
       ssize_t nr = st_read(client_nfd, mark, rb, SEC2USEC(10));
       if (nr <= 0) {
         perror("st_read");
-        goto CLOSE;
+        goto cleanup;
       }
       rb -= nr;
       mark += nr;
@@ -44,9 +44,8 @@ void *handle_connection(void *arg) {
       printf("\n");
       http_request_fwrite(&req, stdout);
 
-      if (g_datalist_get_data(&req.headers, "EXPECT")) {
-        size_t content_length = strtoull(g_datalist_get_data(
-          &req.headers, "CONTENT_LENGTH"), NULL, 0);
+      if (http_request_get_header(&req, "EXPECT")) {
+        size_t content_length = http_request_get_header_ull(&req, "CONTENT_LENGTH");
         http_response resp;
         http_response_init(&resp, "100", "Continue");
         printf("sending 100-continue\n");
@@ -77,7 +76,7 @@ void *handle_connection(void *arg) {
     }
     http_request_clear(&req);
   }
-CLOSE:
+cleanup:
   http_request_free(&req);
   st_netfd_close(client_nfd);
   g_free(buf);
