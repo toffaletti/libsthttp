@@ -148,6 +148,15 @@ void http_request_clear(http_request *req) {
   g_string_chunk_clear(req->chunk);
 }
 
+void http_request_make(http_request *req,
+  const gchar *method, const gchar *uri)
+{
+  http_request_init(req);
+  req->method = g_string_chunk_insert(req->chunk, method);
+  req->uri = g_string_chunk_insert(req->chunk, uri);
+  req->http_version = g_string_chunk_insert(req->chunk, "HTTP/1.1");
+}
+
 static void http_request_print_headers(gpointer data, gpointer user_data) {
   (void)user_data;
   message_header *hdr = (message_header *)data;
@@ -208,6 +217,20 @@ unsigned long long http_request_get_header_ull(http_request *req,
     http_request_get_header(req, field), NULL, 0);
 }
 
+static void message_headers_to_data(gpointer data, gpointer user_data) {
+  GString *s = (GString *)user_data;
+  message_header *hdr = (message_header *)data;
+  g_string_append_printf(s, "%s: %s\r\n", hdr->name, hdr->value);
+}
+
+GString *http_request_data(http_request *req) {
+  GString *s = g_string_sized_new(1024 * 4);
+  g_string_printf(s, "%s %s %s\r\n", req->method,
+    req->uri, req->http_version);
+  g_queue_foreach(req->headers, message_headers_to_data, s);
+  g_string_append_printf(s, "\r\n");
+  return s;
+}
 
 /* http_response */
 
@@ -263,6 +286,8 @@ static void header_done_cl(void *data, const char *at, size_t length) {
 }
 
 static void last_chunk_cl(void *data, const char *at, size_t length) {
+  (void)at;
+  (void)length;
   http_response *resp = (http_response *)data;
   resp->last_chunk = TRUE;
 }
@@ -336,12 +361,6 @@ void http_response_set_body(http_response *resp, const gchar *body) {
   resp->body_length = strlen(body);
   g_snprintf(lenstr, sizeof(lenstr)-1, "%zu", resp->body_length);
   http_response_set_header(resp, "Content-Length", lenstr);
-}
-
-static void message_headers_to_data(gpointer data, gpointer user_data) {
-  GString *s = (GString *)user_data;
-  message_header *hdr = (message_header *)data;
-  g_string_append_printf(s, "%s: %s\r\n", hdr->name, hdr->value);
 }
 
 GString *http_response_data(http_response *resp) {

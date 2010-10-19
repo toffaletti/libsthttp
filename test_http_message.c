@@ -19,6 +19,48 @@ static void test_http_request_parser_init(void) {
   http_request_free(&req);
 }
 
+static void test_http_request_make1(void) {
+  http_request req;
+  http_request_make(&req, "GET", "/test/this?thing=1&stuff=2&fun&good");
+  http_request_set_header(&req, "user-agent",
+    "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18");
+  http_request_set_header(&req, "host", "localhost:8080");
+  http_request_set_header(&req, "accept", "*/*");
+  static const char *sdata =
+  "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
+  "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
+  "Host: localhost:8080\r\n"
+  "Accept: */*\r\n"
+  "\r\n";
+  GString *s = http_request_data(&req);
+  g_assert(g_strcmp0(sdata, s->str) == 0);
+  g_string_free(s, TRUE);
+  http_request_free(&req);
+}
+
+static void test_http_request_make_parse(void) {
+  http_request req;
+  http_request_make(&req, "GET", "/test/this?thing=1&stuff=2&fun&good");
+  http_request_set_header(&req, "user-agent",
+    "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18");
+  http_request_set_header(&req, "host", "localhost:8080");
+  http_request_set_header(&req, "accept", "*/*");
+  GString *s = http_request_data(&req);
+
+  http_request req2;
+  http_parser parser;
+  http_request_parser_init(&req2, &parser);
+  http_parser_init(&parser);
+  http_parser_execute(&parser, s->str, s->len, 0);
+  g_assert(!http_parser_has_error(&parser));
+  g_assert(http_parser_is_finished(&parser));
+
+  g_string_free(s, TRUE);
+
+  http_request_free(&req2);
+  http_request_free(&req);
+}
+
 static void test_http_request_parser_normalize_header_names(void) {
   http_request req;
   http_parser parser;
@@ -513,6 +555,8 @@ static void test_http_response_parser_chunked(void) {
 int main(int argc, char *argv[]) {
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/http/request/init", test_http_request_init);
+  g_test_add_func("/http/request/make1", test_http_request_make1);
+  g_test_add_func("/http/request/make_parse", test_http_request_make_parse);
   g_test_add_func("/http/request/parser/init", test_http_request_parser_init);
   g_test_add_func("/http/request/parser/normalize_header_names", test_http_request_parser_normalize_header_names);
   g_test_add_func("/http/request/parser/p0", test_http_request_parser_p0);

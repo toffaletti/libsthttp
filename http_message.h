@@ -35,14 +35,15 @@ extern void http_request_parser_init(http_request *req, http_parser *p);
 extern void http_request_clear(http_request *req);
 extern void http_request_debug_print(http_request *req);
 extern void http_request_fwrite(http_request *req, FILE *f);
-
+extern GString *http_request_data(http_request *req);
 extern void http_request_set_header(http_request *req,
   const gchar *field, const gchar *value);
 extern const gchar *http_request_get_header(http_request *req,
   const gchar *field);
 extern unsigned long long http_request_get_header_ull(http_request *req,
   const gchar *field);
-
+extern void http_request_make(http_request *req,
+  const gchar *method, const gchar *uri);
 extern void http_request_free(http_request *req);
 
 /* http_response */
@@ -59,3 +60,4 @@ extern unsigned long long http_response_get_header_ull(http_response *resp,
   const gchar *field);
 extern void http_response_set_body(http_response *resp, const gchar *body);
 extern void http_response_free(http_response *resp);
+
