@@ -1,0 +1,39 @@
+* HTTP references *
+
+HTTP/1.1 rfc: http://www.w3.org/Protocols/rfc2616/rfc2616.html
+
+lighttpd2 uses ragel for http request and response:
+http://redmine.lighttpd.net/projects/lighttpd2/wiki
+
+mongrel uses ragel:
+http://github.com/fauna/mongrel
+
+unicorn uses an improved? version of mongrel parser:
+http://permalink.gmane.org/gmane.comp.lang.ruby.unicorn.general/17
+
+rfuzz has a client version of the mongrel ragel parser:
+http://www.ruby-forum.com/topic/72111
+http://rfuzz.rubyforge.org/
+
+
+* URI references *
+
+http://code.google.com/p/google-url/
+http://uriparser.sourceforge.net/
+URI rfc: http://www.ietf.org/rfc/rfc3986.txt
+ABNF for URI: http://tools.ietf.org/html/rfc3986#page-49
+urlencoding from HTML 2.0 rfc: http://tools.ietf.org/html/rfc1866#section-8.2.1
+
+
+* DNS references *
+
+http://code.google.com/p/adns-python/wiki/RecordTypes
+
+C-ARES (used and maintained by libcurl):
+http://c-ares.haxx.se/
+
+UDNS (no tcp, last release 2007, low-level parsing api):
+http://www.corpit.ru/mjt/udns.html
+
+ADNS (unmaintained? no ipv6):
+http://www.chiark.greenend.org.uk/~ian/adns/
