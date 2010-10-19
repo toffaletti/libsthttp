@@ -22,10 +22,10 @@ static void test_http_request_parser_init(void) {
 static void test_http_request_make1(void) {
   http_request req;
   http_request_make(&req, "GET", "/test/this?thing=1&stuff=2&fun&good");
-  http_request_set_header(&req, "user-agent",
+  http_request_header_append(&req, "user-agent",
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18");
-  http_request_set_header(&req, "host", "localhost:8080");
-  http_request_set_header(&req, "accept", "*/*");
+  http_request_header_append(&req, "host", "localhost:8080");
+  http_request_header_append(&req, "accept", "*/*");
   static const char *sdata =
   "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -41,10 +41,10 @@ static void test_http_request_make1(void) {
 static void test_http_request_make_parse(void) {
   http_request req;
   http_request_make(&req, "GET", "/test/this?thing=1&stuff=2&fun&good");
-  http_request_set_header(&req, "user-agent",
+  http_request_header_append(&req, "user-agent",
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18");
-  http_request_set_header(&req, "host", "localhost:8080");
-  http_request_set_header(&req, "accept", "*/*");
+  http_request_header_append(&req, "host", "localhost:8080");
+  http_request_header_append(&req, "accept", "*/*");
   GString *s = http_request_data(&req);
 
   http_request req2;
@@ -90,10 +90,10 @@ static void test_http_request_parser_normalize_header_names(void) {
   g_assert(g_strcmp0(req.body, NULL) == 0);
   g_assert(req.body_length == 0);
 
-  g_assert(g_strcmp0(http_request_get_header(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
 
   http_request_free(&req);
   g_free(data);
@@ -128,10 +128,10 @@ static void test_http_request_parser_p0(void) {
   g_assert(g_strcmp0(req.body, NULL) == 0);
   g_assert(req.body_length == 0);
 
-  g_assert(g_strcmp0(http_request_get_header(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
 
   http_request_free(&req);
   g_free(data);
@@ -160,10 +160,10 @@ static void test_http_request_parser_p1(void) {
   g_assert(g_strcmp0(req.body, NULL) == 0);
   g_assert(req.body_length == 0);
 
-  g_assert(g_strcmp0(http_request_get_header(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
 
   http_request_free(&req);
   g_free(data);
@@ -231,10 +231,10 @@ static void test_http_request_parser_proxy_http12(void) {
   g_assert(g_strcmp0(req.body, NULL) == 0);
   g_assert(req.body_length == 0);
 
-  g_assert(g_strcmp0(http_request_get_header(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
 
   http_request_free(&req);
   g_free(data);
@@ -263,10 +263,10 @@ static void test_http_request_clear(void) {
   g_assert(g_strcmp0(req.body, NULL) == 0);
   g_assert(req.body_length == 0);
 
-  g_assert(g_strcmp0(http_request_get_header(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
 
   /* clear this request */
   http_request_clear(&req);
@@ -291,14 +291,33 @@ static void test_http_request_clear(void) {
   g_assert(g_strcmp0(req.body, NULL) == 0);
   g_assert(req.body_length == 0);
 
-  g_assert(g_strcmp0(http_request_get_header(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_get_header(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
 
   http_request_free(&req);
   g_free(data);
 }
+
+static void test_http_request_headers(void) {
+  http_request req;
+  http_request_init(&req);
+  http_request_header_append(&req, "test-a", "test-a");
+  http_request_header_append(&req, "test-b", "test-b");
+  http_request_header_append(&req, "test-c", "test-c");
+  http_request_header_append(&req, "test-a", "test-a");
+  g_assert(g_strcmp0("test-a", http_request_header_getstr(&req, "test-a")));
+  g_assert(g_strcmp0("test-b", http_request_header_getstr(&req, "test-b")));
+  g_assert(g_strcmp0("test-c", http_request_header_getstr(&req, "test-c")));
+  g_assert(http_request_header_remove(&req, "Test-A"));
+  g_assert(http_request_header_remove(&req, "Test-B"));
+  g_assert(http_request_header_remove(&req, "Test-C"));
+  g_assert(http_request_header_remove(&req, "Test-A") == FALSE);
+  http_request_free(&req);
+}
+
+/* http response */
 
 static void test_http_response_init(void) {
   http_response resp;
@@ -323,13 +342,13 @@ static void test_http_response_init_200_OK(void) {
 static void test_http_response_data(void) {
   http_response resp;
   http_response_init_200_OK(&resp);
-  http_response_set_header(&resp, "Host", "localhost");
-  http_response_set_header(&resp, "Content-Length", "0");
+  http_response_header_append(&resp, "Host", "localhost");
+  http_response_header_append(&resp, "Content-Length", "0");
   g_assert(g_strcmp0("200", resp.status_code) == 0);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(resp.body == NULL);
-  g_assert(g_strcmp0("0", http_response_get_header(&resp, "Content-Length")) == 0);
+  g_assert(g_strcmp0("0", http_response_header_getstr(&resp, "Content-Length")) == 0);
   GString *s = http_response_data(&resp);
   static const char *expected_data =
   "HTTP/1.1 200 OK\r\n"
@@ -344,8 +363,8 @@ static void test_http_response_data(void) {
 static void test_http_response_body(void) {
   http_response resp;
   http_response_init_200_OK(&resp);
-  http_response_set_header(&resp, "Host", "localhost");
-  http_response_set_header(&resp, "Content-Type", "text/plain");
+  http_response_header_append(&resp, "Host", "localhost");
+  http_response_header_append(&resp, "Content-Type", "text/plain");
   static const char *body = "this is a test.\r\nthis is only a test.";
   char numstr[32];
   snprintf(numstr, sizeof(numstr), "%zu", strlen(body));
@@ -354,8 +373,8 @@ static void test_http_response_body(void) {
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(g_strcmp0(body, resp.body) == 0);
-  g_assert(g_strcmp0("text/plain", http_response_get_header(&resp, "Content-Type")) == 0);
-  g_assert(g_strcmp0("37", http_response_get_header(&resp, "Content-Length")) == 0);
+  g_assert(g_strcmp0("text/plain", http_response_header_getstr(&resp, "Content-Type")) == 0);
+  g_assert(g_strcmp0("37", http_response_header_getstr(&resp, "Content-Length")) == 0);
   GString *s = http_response_data(&resp);
   static const char *expected_data =
   "HTTP/1.1 200 OK\r\n"
@@ -406,8 +425,8 @@ static void test_http_response_parser_normalize_header_names(void) {
   g_assert(g_strcmp0("200", resp.status_code) == 0);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("this is a test.\r\nthis is only a test.", resp.body) == 0);
-  g_assert(g_strcmp0("37", http_response_get_header(&resp, "Content-Length")) == 0);
-  g_assert(g_strcmp0("text/plain", http_response_get_header(&resp, "Content-Type")) == 0);
+  g_assert(g_strcmp0("37", http_response_header_getstr(&resp, "Content-Length")) == 0);
+  g_assert(g_strcmp0("text/plain", http_response_header_getstr(&resp, "Content-Type")) == 0);
   http_response_free(&resp);
   g_free(data);
 }
@@ -439,8 +458,8 @@ static void test_http_response_parser_p0(void) {
   g_assert(g_strcmp0("200", resp.status_code) == 0);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("this is a test.\r\nthis is only a test.", resp.body) == 0);
-  g_assert(g_strcmp0("37", http_response_get_header(&resp, "Content-Length")) == 0);
-  g_assert(g_strcmp0("text/plain", http_response_get_header(&resp, "Content-Type")) == 0);
+  g_assert(g_strcmp0("37", http_response_header_getstr(&resp, "Content-Length")) == 0);
+  g_assert(g_strcmp0("text/plain", http_response_header_getstr(&resp, "Content-Type")) == 0);
   http_response_free(&resp);
   g_free(data);
 }
@@ -467,8 +486,8 @@ static void test_http_response_parser_p1(void) {
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(g_strcmp0("200", resp.status_code) == 0);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
-  g_assert(g_strcmp0("37", http_response_get_header(&resp, "Content-Length")) == 0);
-  g_assert(g_strcmp0("text/plain", http_response_get_header(&resp, "Content-Type")) == 0);
+  g_assert(g_strcmp0("37", http_response_header_getstr(&resp, "Content-Length")) == 0);
+  g_assert(g_strcmp0("text/plain", http_response_header_getstr(&resp, "Content-Type")) == 0);
 
   http_response_free(&resp);
   g_free(data);
@@ -502,8 +521,8 @@ static void test_http_response_parser_chunked(void) {
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(g_strcmp0("200", resp.status_code) == 0);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
-  g_assert(g_strcmp0("text/plain", http_response_get_header(&resp, "Content-Type")) == 0);
-  g_assert(g_strcmp0("chunked", http_response_get_header(&resp, "Transfer-Encoding")) == 0);
+  g_assert(g_strcmp0("text/plain", http_response_header_getstr(&resp, "Content-Type")) == 0);
+  g_assert(g_strcmp0("chunked", http_response_header_getstr(&resp, "Transfer-Encoding")) == 0);
 
   /* reset the parse for the chunked part */
   httpclient_parser_init(&parser);
@@ -564,6 +583,7 @@ int main(int argc, char *argv[]) {
   g_test_add_func("/http/request/parser/p2", test_http_request_parser_p2);
   g_test_add_func("/http/request/parser/p3", test_http_request_parser_p3);
   g_test_add_func("/http/request/parser/proxy_http12", test_http_request_parser_proxy_http12);
+  g_test_add_func("/http/request/headers", test_http_request_headers);
   g_test_add_func("/http/request/clear", test_http_request_clear);
 
   g_test_add_func("/http/response/init", test_http_response_init);

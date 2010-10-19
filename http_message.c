@@ -39,6 +39,54 @@ static gchar *normalize_header_name(gchar *field) {
   return field;
 }
 
+static gint header_name_compare(gconstpointer a, gconstpointer b) {
+  const message_header *am = (message_header *)a;
+  const gchar *field = (const gchar *)b;
+  return g_strcmp0(field, am->name);
+}
+
+void http_header_append(GQueue *headers,
+  GStringChunk *chunk,
+  const gchar *field, const gchar *value)
+{
+  message_header *hdr = g_slice_new(message_header);
+  hdr->name = g_string_chunk_insert(chunk, field);
+  normalize_header_name(hdr->name);
+  hdr->value = g_string_chunk_insert(chunk, value);
+  g_queue_push_tail(headers, hdr);
+}
+
+gboolean http_header_remove(GQueue *headers,
+  const gchar *field)
+{
+  GList *l = g_queue_find_custom(headers, field, header_name_compare);
+  gboolean found = FALSE;
+  while (l) {
+    g_slice_free(message_header, l->data);
+    g_queue_delete_link(headers, l);
+    found = TRUE;
+    l = g_queue_find_custom(headers, field, header_name_compare);
+  }
+  return found;
+}
+
+const gchar *http_header_getstr(GQueue *headers,
+  const gchar *field)
+{
+  GList *l = g_queue_find_custom(headers, field, header_name_compare);
+  if (l) {
+    return ((message_header *)l->data)->value;
+  }
+  return NULL;
+}
+
+unsigned long long http_header_getull(GQueue *headers,
+  const gchar *field)
+{
+  return strtoull(
+    http_header_getstr(headers, field), NULL, 0);
+}
+
 static void request_method(void *data, const char *at, size_t length) {
   http_request *msg = (http_request *)data;
   msg->method = g_string_chunk_insert_len(msg->chunk, at, length);
@@ -79,16 +127,6 @@ static void header_done(void *data, const char *at, size_t length) {
   }
 }
 
-void http_request_set_header(http_request *req,
-  const gchar *field, const gchar *value)
-{
-  message_header *hdr = g_slice_new(message_header);
-  hdr->name = g_string_chunk_insert(req->chunk, field);
-  normalize_header_name(hdr->name);
-  hdr->value = g_string_chunk_insert(req->chunk, value);
-  g_queue_push_tail(req->headers, hdr);
-}
-
 static void http_field(void *data, const char *field,
   size_t flen, const char *value, size_t vlen)
 {
@@ -101,7 +139,7 @@ static void http_field(void *data, const char *field,
   gchar vvf = v[vlen];
   f[flen] = 0;
   v[vlen] = 0;
-  http_request_set_header(req, field, value);
+  http_request_header_append(req, field, value);
   /* restore saved character */
   f[flen] = svf;
   v[vlen] = vvf;
@@ -194,29 +232,6 @@ void http_request_free(http_request *req) {
   g_string_chunk_free(req->chunk);
 }
 
-static gint header_name_compare(gconstpointer a, gconstpointer b) {
-  const message_header *am = (message_header *)a;
-  const gchar *field = (const gchar *)b;
-  return g_strcmp0(field, am->name);
-}
-
-const gchar *http_request_get_header(http_request *req,
-  const gchar *field)
-{
-  GList *l = g_queue_find_custom(req->headers, field, header_name_compare);
-  if (l) {
-    return ((message_header *)l->data)->value;
-  }
-  return NULL;
-}
-
-unsigned long long http_request_get_header_ull(http_request *req,
-  const gchar *field)
-{
-  return strtoull(
-    http_request_get_header(req, field), NULL, 0);
-}
-
 static void message_headers_to_data(gpointer data, gpointer user_data) {
   GString *s = (GString *)user_data;
   message_header *hdr = (message_header *)data;
@@ -247,7 +262,7 @@ static void http_field_cl(void *data, const char *field,
   f[flen] = 0;
   v[vlen] = 0;
   /* TODO: need to normalize header. for example, convert to all caps */
-  http_response_set_header(resp, field, value);
+  http_response_header_append(resp, field, value);
   /* restore saved character */
   f[flen] = svf;
   v[vlen] = vvf;
@@ -328,39 +343,13 @@ void http_response_parser_init(http_response *resp, httpclient_parser *p) {
   p->last_chunk = last_chunk_cl;
 }
 
-void http_response_set_header(http_response *resp,
-  const gchar *field, const gchar *value)
-{
-  message_header *hdr = g_slice_new(message_header);
-  hdr->name = g_string_chunk_insert(resp->chunk, field);
-  normalize_header_name(hdr->name);
-  hdr->value = g_string_chunk_insert(resp->chunk, value);
-  g_queue_push_tail(resp->headers, hdr);
-}
-
-const gchar *http_response_get_header(http_response *resp,
-  const gchar *field)
-{
-  GList *l = g_queue_find_custom(resp->headers, field, header_name_compare);
-  if (l) {
-    return ((message_header *)l->data)->value;
-  }
-  return NULL;
-}
-
-unsigned long long http_response_get_header_ull(http_response *resp,
-  const gchar *field)
-{
-  return strtoull(
-    http_response_get_header(resp, field), NULL, 0);
-}
-
 void http_response_set_body(http_response *resp, const gchar *body) {
   gchar lenstr[32];
   resp->body = body;
   resp->body_length = strlen(body);
   g_snprintf(lenstr, sizeof(lenstr)-1, "%zu", resp->body_length);
-  http_response_set_header(resp, "Content-Length", lenstr);
+  /* TODO: remove header first */
+  http_response_header_append(resp, "Content-Length", lenstr);
 }
 
 GString *http_response_data(http_response *resp) {

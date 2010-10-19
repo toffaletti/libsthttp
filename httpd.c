@@ -44,8 +44,8 @@ void *handle_connection(void *arg) {
       printf("\n");
       http_request_fwrite(&req, stdout);
 
-      if (http_request_get_header(&req, "EXPECT")) {
-        size_t content_length = http_request_get_header_ull(&req, "CONTENT_LENGTH");
+      if (http_request_header_getstr(&req, "EXPECT")) {
+        size_t content_length = http_request_header_getull(&req, "CONTENT_LENGTH");
         http_response resp;
         http_response_init(&resp, "100", "Continue");
         printf("sending 100-continue\n");
@@ -64,8 +64,8 @@ void *handle_connection(void *arg) {
       }
       http_response resp;
       http_response_init_200_OK(&resp);
-      http_response_set_header(&resp, "Content-type", "text/html");
-      http_response_set_header(&resp, "Connection", "close");
+      http_response_header_append(&resp, "Content-type", "text/html");
+      http_response_header_append(&resp, "Connection", "close");
       http_response_set_body(&resp, "<H2>It worked!</H2>");
       GString *resp_data = http_response_data(&resp);
       st_write(client_nfd, resp_data->str, resp_data->len, ST_UTIME_NO_TIMEOUT);
