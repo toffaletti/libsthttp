@@ -8,12 +8,7 @@ typedef struct message_header {
 } message_header;
 
 /* TODO 
- * - use string pool for header names g_string_chunk_insert_const
- * - use string pool for other common strings like OK, 200, HTTP/1.1
- * - share string pool across http_request/response objects?
- * - perhaps use a linked list for headers. GData doesn't seem quite right
  * - add function to serialize to iovec for speedy writes
- * - need parser for response also (client side)
  * - http://www.jmarshall.com/easy/http/
  */
 
