@@ -44,8 +44,8 @@ void *handle_connection(void *arg) {
       printf("\n");
       http_request_fwrite(&req, stdout);
 
-      if (http_request_header_getstr(&req, "EXPECT")) {
-        size_t content_length = http_request_header_getull(&req, "CONTENT_LENGTH");
+      if (http_request_header_getstr(&req, "Expect")) {
+        size_t content_length = http_request_header_getull(&req, "Content-Length");
         http_response resp;
         http_response_init(&resp, "100", "Continue");
         printf("sending 100-continue\n");
@@ -56,10 +56,14 @@ void *handle_connection(void *arg) {
         g_string_free(resp_data, TRUE);
         size_t nb = 0;
         while (nb < content_length) {
-          ssize_t nr = st_read(client_nfd, buf, rb, SEC2USEC(10));
+          ssize_t nr = st_read(client_nfd, buf, bufsize, SEC2USEC(10));
           printf("got %zd bytes %zd total\n", nr, nr + nb);
           if (nr <= 0) break;
           nb += nr;
+        }
+
+        if (nb == content_length) {
+          printf("GOT IT ALL!\n");
         }
       }
       http_response resp;
