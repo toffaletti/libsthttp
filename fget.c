@@ -120,11 +120,8 @@ static void *do_get(void *arg) {
       bpos = resp.body_length;
 
 parser_init:
-      // TODO: this is wrong, need to grow buf and pass entire chunk through parser
-      // because of chunk extensions at the end. what a terrible protocol.
       http_response_clear(&resp);
       httpclient_parser_init(&clp);
-      printf("BUFFFF [[%.10s]]\n", buf);
       httpclient_parser_execute(&clp, buf, bpos, 0);
       printf("\n=====\n");
       printf("nread: %zu\n", clp.nread);
@@ -136,41 +133,33 @@ parser_init:
         goto done;
       }
       // consume(body, min(resp.chunk_size, resp.body_length));
-      if (bpos >= resp.chunk_size) {
-        bpos = bpos-resp.chunk_size;
-        memmove(buf, &resp.body[resp.chunk_size], bpos);
-        printf("GOING TO PARSER_INIT\n");
+      if (bpos >= resp.chunk_size+2) {
+        bpos = bpos-resp.chunk_size-2;
+        memmove(buf, &resp.body[resp.chunk_size+2], bpos);
         goto parser_init;
       }
 
-      printf("parsed(%zu): [[%.*s]]\n", clp.nread, clp.nread, buf);
-      size_t total_read = bpos - (clp.nread - 1);
-      while (total_read < resp.chunk_size) {
+      size_t total_read = bpos - (clp.nread-1);
+      while (total_read < resp.chunk_size+2) { // +2 for crlf
         size_t nr = st_read(rmt_nfd, buf, blen, ST_UTIME_NO_TIMEOUT);
         // consume(buf, nr);
         total_read += nr;
         bpos = nr;
-        printf("total_read: %zu nr: %zu\n", total_read, nr);
       }
 
-      if (total_read > resp.chunk_size) {
+      if (total_read > resp.chunk_size+2) {
         // number of bytes in the buffer that are past this chunk
-        size_t extra = (total_read - resp.chunk_size);
-        printf("extra: %zu\n", extra);
+        size_t extra = (total_read - resp.chunk_size) - 2;
         memmove(buf, &buf[bpos - extra], extra);
-        printf("extra buf [[%.10s]]\n", buf);
         bpos = extra;
         goto parser_init;
       }
 
       if (resp.chunk_size) {
         size_t nr = st_read(rmt_nfd, buf, blen, ST_UTIME_NO_TIMEOUT);
-        printf("nr: %zd\n", nr);
+        bpos = nr;
         goto parser_init;
       }
-
-      break;
-
     } else {
       size_t total_read = resp.body_length;
       for (;;) {
@@ -180,8 +169,8 @@ parser_init:
         printf("read %zu bytes, %zu/%zu\n", nr, total_read, content_size);
         if (content_size && total_read >= content_size) break;
       }
-      break;
     }
+    break;
   }
 
 done:
