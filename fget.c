@@ -162,13 +162,14 @@ parser_init:
       }
     } else {
       size_t total_read = resp.body_length;
-      for (;;) {
+      while (content_size == 0 || total_read < content_size) {
         ssize_t nr = st_read(rmt_nfd, buf, blen, ST_UTIME_NO_TIMEOUT);
         if (nr <= 0) break;
         total_read += nr;
         printf("read %zu bytes, %zu/%zu\n", nr, total_read, content_size);
         if (content_size && total_read >= content_size) break;
       }
+      printf("total_read: %zu\n", total_read);
     }
     break;
   }
