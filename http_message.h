@@ -94,5 +94,6 @@ extern void http_response_init_200_OK(http_response *resp);
 extern void http_response_init(http_response *resp, const gchar *code, const gchar *reason);
 extern GString *http_response_data(http_response *resp);
 extern void http_response_set_body(http_response *resp, const gchar *body);
+extern void http_response_clear(http_response *resp);
 extern void http_response_free(http_response *resp);
 

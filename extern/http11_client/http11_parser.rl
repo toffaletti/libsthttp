@@ -132,7 +132,7 @@ size_t httpclient_parser_execute(httpclient_parser *parser, const char *buffer, 
   parser->nread += p - (buffer + off);
 
   assert(p <= pe && "buffer overflow after parsing execute");
-  assert(parser->nread <= len && "nread longer than length");
+  /* assert(parser->nread <= len && "nread longer than length"); */
   assert(parser->body_start <= len && "body starts after buffer end");
   assert(parser->mark < len && "mark is after buffer end");
   assert(parser->field_len <= len && "field has length longer than whole buffer");

@@ -1,8 +1,8 @@
 #include "st.h"
 #include <ares.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -12,7 +12,7 @@
 /* deep copy hostent struct. memory allocation scheme
  * borrowed from ares_free_hostent.
  */
-void copy_hostent(struct hostent *from, struct hostent **to) {
+static void copy_hostent(struct hostent *from, struct hostent **to) {
   *to = calloc(1, sizeof(struct hostent));
   (*to)->h_name = strdup(from->h_name);
   int n = 0;
@@ -21,7 +21,9 @@ void copy_hostent(struct hostent *from, struct hostent **to) {
   }
   (*to)->h_aliases = calloc(n+1, sizeof(char *));
   while (n) {
-    (*to)->h_aliases[n] = strdup(from->h_aliases[n]);
+    if (from->h_aliases[n]) {
+      (*to)->h_aliases[n] = strdup(from->h_aliases[n]);
+    }
     n--;
   }
   (*to)->h_addrtype = from->h_addrtype;
@@ -43,7 +45,7 @@ void copy_hostent(struct hostent *from, struct hostent **to) {
  * max_fd pollfds will be malloced and returned in fds_p
  * actual number of fds will be returned in nfds;
  */
-void fd_sets_to_pollfd(fd_set *read_fds, fd_set *write_fds, int max_fd, struct pollfd **fds_p, int *nfds) {
+static void fd_sets_to_pollfd(fd_set *read_fds, fd_set *write_fds, int max_fd, struct pollfd **fds_p, int *nfds) {
   /* using max_fd is over allocating */
   struct pollfd *fds = calloc(max_fd, sizeof(struct pollfd));
   int ifd = 0;
@@ -65,7 +67,7 @@ void fd_sets_to_pollfd(fd_set *read_fds, fd_set *write_fds, int max_fd, struct p
 }
 
 /* convert pollfd to read and write fd_sets */
-void pollfd_to_fd_sets(struct pollfd *fds, int nfds, fd_set *read_fds, fd_set *write_fds) {
+static void pollfd_to_fd_sets(struct pollfd *fds, int nfds, fd_set *read_fds, fd_set *write_fds) {
   FD_ZERO(read_fds);
   FD_ZERO(write_fds);
   for (int i = 0; i<nfds; i++) {
@@ -125,45 +127,4 @@ int st_gethostbyname_r(const char *name, struct hostent **host) {
 cleanup:
   ares_destroy(channel);
   return status;
-}
-
-void *do_lookup(void *arg) {
-
-  struct hostent *host;
-
-  int status;
-  status = st_gethostbyname_r("google.com", &host);
-
-  printf("thread: %s\n", (char *)arg);
-  char **p = NULL;
-  for (p = host->h_addr_list; *p; p++)
-  {
-    char addr_buf[46] = "??";
-    inet_ntop(host->h_addrtype, *p, addr_buf, sizeof(addr_buf));
-    printf("%-32s\t%s", host->h_name, addr_buf);
-    puts("");
-  }
-
-  ares_free_hostent(host);
-
-  return NULL;
-}
-
-int main(int argc, char *argv[]) {
-  int status;
-  st_init();
-  status = ares_library_init(ARES_LIB_INIT_ALL);
-  if (status != ARES_SUCCESS)
-  {
-    fprintf(stderr, "ares_library_init: %s\n", ares_strerror(status));
-    return 1;
-  }
-
-  st_thread_t t = st_thread_create(do_lookup, "A", 1, 1024 * 128);
-  st_thread_t t2 = st_thread_create(do_lookup, "B", 1, 1024 * 128);
-  st_thread_join(t, NULL);
-  st_thread_join(t2, NULL);
-
-  ares_library_cleanup();
-  return 0;
 }

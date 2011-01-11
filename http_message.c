@@ -216,7 +216,7 @@ static void http_request_write_headers(gpointer data, gpointer user_data) {
 }
 
 void http_request_fwrite(http_request *req, FILE *f) {
-  fprintf(f, "%s %s %s\r\n", req->http_version, req->method, req->uri);
+  fprintf(f, "%s %s %s\r\n", req->method, req->uri, req->http_version);
   g_queue_foreach(req->headers, http_request_write_headers, f);
   fprintf(f, "\r\n");
 }
@@ -355,6 +355,22 @@ GString *http_response_data(http_response *resp) {
   g_queue_foreach(resp->headers, message_headers_to_data, s);
   g_string_append_printf(s, "\r\n");
   return s;
+}
+
+void http_response_clear(http_response *resp) {
+  resp->http_version = NULL;
+  resp->status_code = NULL;
+  resp->reason = NULL;
+  resp->body = NULL;
+  resp->body_length = 0;
+  resp->chunk_size = 0;
+  resp->last_chunk = 0;
+
+  if (resp->headers) {
+    g_queue_foreach(resp->headers, free_message_headers, NULL);
+    g_queue_clear(resp->headers);
+  }
+  g_string_chunk_clear(resp->chunk);
 }
 
 void http_response_free(http_response *resp) {

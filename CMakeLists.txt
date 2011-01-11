@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 2.6)
 project(fw)
 
 add_subdirectory(extern)
+add_subdirectory(uri)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/uri)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/extern)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/extern/st-1.9)
@@ -19,6 +22,10 @@ target_link_libraries(test-http-message glib-2.0 http11 http11client)
 #add_executable(adns-st adns-st.c)
 #target_link_libraries(adns-st glib-2.0 st adns)
 
-add_executable(cares-st cares-st.c)
-target_link_libraries(cares-st glib-2.0 st cares)
+add_executable(test-cares-st test-cares-st.c cares-st.c)
+target_link_libraries(test-cares-st glib-2.0 st cares)
+
+add_definitions(-DURI_USE_GLIB -D_GNU_SOURCE)
+add_executable(fget fget.c cares-st.c http_message.c)
+target_link_libraries(fget glib-2.0 st cares uri http11 http11client)
 
