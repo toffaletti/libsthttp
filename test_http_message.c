@@ -504,13 +504,13 @@ static void test_http_response_parser_chunked(void) {
   "Content-Type: text/plain\r\n"
   "Transfer-Encoding: chunked\r\n\r\n"
   "25\r\n"
-  "This is the data in the first chunk\r\n"
+  "This is the data in the first chunk\r\n\r\n"
   "1C\r\n"
-  "and this is the second one\r\n"
+  "and this is the second one\r\n\r\n"
   "3\r\n"
-  "con"
+  "con\r\n"
   "8\r\n"
-  "sequence"
+  "sequence\r\n"
   "0\r\n"
   "\r\n";
   char *data = g_strdup(sdata);
@@ -532,36 +532,33 @@ static void test_http_response_parser_chunked(void) {
   g_assert(resp.chunk_size == 37);
   g_assert(resp.last_chunk == FALSE);
 
+  gchar *mark = resp.body+resp.chunk_size+2; // 2 for terminating crlf
   httpclient_parser_init(&parser);
-  httpclient_parser_execute(&parser, resp.body+37, strlen(resp.body+37), 0);
+  httpclient_parser_execute(&parser, mark, strlen(mark), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
   g_assert(resp.chunk_size == 28);
   g_assert(resp.last_chunk == FALSE);
 
+  mark = resp.body+resp.chunk_size+2;
   httpclient_parser_init(&parser);
-  httpclient_parser_execute(&parser, resp.body+28, strlen(resp.body)+28, 0);
+  httpclient_parser_execute(&parser, mark, strlen(mark), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
   g_assert(resp.chunk_size == 3);
   g_assert(resp.last_chunk == FALSE);
 
+  mark = resp.body+resp.chunk_size+2;
   httpclient_parser_init(&parser);
-  httpclient_parser_execute(&parser, resp.body+3, strlen(resp.body+3), 0);
+  httpclient_parser_execute(&parser, mark, strlen(mark), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
   g_assert(resp.chunk_size == 8);
   g_assert(resp.last_chunk == FALSE);
 
+  mark = resp.body+resp.chunk_size+2;
   httpclient_parser_init(&parser);
-  httpclient_parser_execute(&parser, resp.body+8, strlen(resp.body+8), 0);
-  g_assert(!httpclient_parser_has_error(&parser));
-  g_assert(httpclient_parser_is_finished(&parser));
-  g_assert(resp.chunk_size == 0);
-  g_assert(resp.last_chunk == FALSE);
-
-  httpclient_parser_init(&parser);
-  httpclient_parser_execute(&parser, resp.body+0, strlen(resp.body+0), 0);
+  httpclient_parser_execute(&parser, mark, strlen(mark), 0);
   g_assert(!httpclient_parser_has_error(&parser));
   g_assert(httpclient_parser_is_finished(&parser));
   g_assert(resp.chunk_size == 0);

@@ -55,7 +55,7 @@
   }
 
   action done { 
-    parser->body_start = fpc - buffer + 1; 
+    parser->body_start = fpc - buffer + 1;
     if(parser->header_done != NULL)
       parser->header_done(parser->data, fpc + 1, pe - fpc - 1);
     fbreak;
@@ -86,10 +86,10 @@
   chunk_ext_val = token+;
   chunk_ext_name = token+;
   chunk_extension = (";" chunk_ext_name >start_field %write_field %start_value ("=" chunk_ext_val >start_value)? %write_value )*;
-  last_chunk = "0"? chunk_extension :> (CRLF @last_chunk @done);
+  last_chunk = "0" chunk_extension :> (CRLF @last_chunk @done);
   chunk_size = xdigit+;
   chunk = chunk_size >mark %chunk_size chunk_extension :> (CRLF @done);
-  Chunked_Header = (chunk | last_chunk);
+  Chunked_Header = (last_chunk | chunk);
 
   main := Response | Chunked_Header;
 }%%
