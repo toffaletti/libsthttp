@@ -7,7 +7,7 @@
 #include "http_message.h"
 
 static void *do_get(void *arg) {
-  size_t blen = 4 * 1024;
+  size_t blen = 8 * 1024;
   char *buf = g_malloc(blen);
   size_t bpos = 0;
   const char *error_at = NULL;
@@ -89,7 +89,7 @@ static void *do_get(void *arg) {
       printf("pe: %zu\n", pe);
       if (httpclient_parser_has_error(&clp)) {
         perror("parser error");
-        goto done;
+        goto close;
       }
       if (!httpclient_parser_is_finished(&clp)) {
         blen += (4 * 1024);
@@ -101,7 +101,7 @@ static void *do_get(void *arg) {
 
       if (blen > (4 * 1024 * 1024)) {
         // too big
-        goto done;
+        goto close;
       }
     } while (!httpclient_parser_is_finished(&clp));
 
@@ -130,7 +130,7 @@ parser_init:
       printf("error?: %d\n", httpclient_parser_has_error(&clp));
       printf("finished?: %d\n", httpclient_parser_is_finished(&clp));
       if (resp.last_chunk || httpclient_parser_has_error(&clp)) {
-        goto done;
+        goto close;
       }
       // consume(body, min(resp.chunk_size, resp.body_length));
       if (bpos >= resp.chunk_size+2) {
@@ -171,11 +171,16 @@ parser_init:
       }
       printf("total_read: %zu\n", total_read);
     }
+
+close:
+    http_response_free(&resp);
+    st_netfd_close(rmt_nfd);
     break;
   }
 
 done:
 
+  uri_free(&u);
   g_free(buf);
   ares_free_hostent(host);
 
