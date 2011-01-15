@@ -73,7 +73,7 @@ struct http_stream *http_stream_open(httpclient_parser *clp, http_response *resp
 
 static ssize_t _http_stream_read_chunked(struct http_stream *s, void *ptr, size_t size) {
   fprintf(stderr, "start: %p end: %p len: %zd\n", s->start, s->end, s->end - s->start);
-  fprintf(stderr, "chunk_read: %zu\n", s->chunk_read);
+  fprintf(stderr, "chunk_read: %zu/%zu\n", s->chunk_read, s->resp->chunk_size);
   if (s->chunk_read > 0 && s->chunk_read == s->resp->chunk_size) {
     fprintf(stderr, "CHUNK DONE\n");
     s->chunk_read = 0;

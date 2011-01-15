@@ -42,7 +42,7 @@
     parser->status_code(parser->data, PTR_TO(mark), LEN(mark, fpc));
   }
 
-  action http_version {	
+  action http_version {
     parser->http_version(parser->data, PTR_TO(mark), LEN(mark, fpc));
   }
 
@@ -81,14 +81,14 @@
   field_value = any* >start_value %write_value;
   message_header = field_name ":" " "* field_value :> CRLF;
 
-  Response = 	Status_Line (message_header)* (CRLF @done);
+  Response = Status_Line (message_header)* (CRLF @done);
 
   chunk_ext_val = token+;
   chunk_ext_name = token+;
   chunk_extension = (";" chunk_ext_name >start_field %write_field %start_value ("=" chunk_ext_val >start_value)? %write_value )*;
   last_chunk = "0" chunk_extension :> (CRLF @last_chunk @done);
   chunk_size = xdigit+;
-  chunk = chunk_size >mark %chunk_size chunk_extension :> (CRLF @done);
+  chunk = chunk_size >mark %chunk_size ' '* chunk_extension :> (CRLF @done);
   Chunked_Header = (last_chunk | chunk);
 
   main := Response | Chunked_Header;
