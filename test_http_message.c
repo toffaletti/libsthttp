@@ -532,7 +532,7 @@ static void test_http_response_parser_chunked(void) {
   g_assert(resp.chunk_size == 37);
   g_assert(resp.last_chunk == FALSE);
 
-  gchar *mark = resp.body+resp.chunk_size+2; // 2 for terminating crlf
+  const gchar *mark = resp.body+resp.chunk_size+2; // 2 for terminating crlf
   httpclient_parser_init(&parser);
   httpclient_parser_execute(&parser, mark, strlen(mark), 0);
   g_assert(!httpclient_parser_has_error(&parser));

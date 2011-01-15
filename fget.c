@@ -104,7 +104,9 @@ static ssize_t _http_stream_read_chunked(struct http_stream *s, void *ptr, size_
   }
 
   if (s->start < s->end) {
-    ssize_t rvalue = min(s->resp->chunk_size - s->chunk_read, min(size, s->end - s->start));
+    g_assert(s->end >= s->start);
+    g_assert(s->resp->chunk_size >= s->chunk_read);
+    ssize_t rvalue = min(s->resp->chunk_size - s->chunk_read, min(size, (size_t)(s->end - s->start)));
     memcpy(ptr, s->start, rvalue);
     s->start += rvalue;
     s->chunk_read += rvalue;
@@ -125,8 +127,9 @@ ssize_t http_stream_read(struct http_stream *s, void *ptr, size_t size) {
       s->start = s->resp->body;
       s->end = s->resp->body + s->resp->body_length;
     }
+    g_assert(s->end >= s->start);
     if (s->total_read < s->resp->body_length) {
-      ssize_t rvalue = min(size, s->end - s->start);
+      ssize_t rvalue = min(size, (size_t)(s->end - s->start));
       memcpy(ptr, s->start, rvalue);
       s->start += rvalue;
       s->total_read += rvalue;
