@@ -23,7 +23,7 @@ struct http_stream {
 
   st_netfd_t nfd;
 
-  size_t content_size;
+  ssize_t content_size;
   size_t total_read;
   size_t chunk_read;
 
@@ -36,6 +36,7 @@ struct http_stream *http_stream_open(httpclient_parser *clp, http_response *resp
   s->nfd = nfd;
   s->blen = 8 * 1024;
   s->buf = g_malloc(s->blen);
+  s->content_size = -1; /* unknown content size */
 
   http_response_parser_init(s->resp, s->clp);
   size_t bpos = 0;
@@ -122,7 +123,7 @@ ssize_t http_stream_read(struct http_stream *s, void *ptr, size_t size) {
   if (g_strcmp0("chunked", s->transfer_encoding) == 0) {
     return _http_stream_read_chunked(s, ptr, size);
   } else {
-    if (s->content_size > 0 && s->content_size == s->total_read) { return 0; }
+    if (s->content_size >= 0 && s->content_size == s->total_read) { return 0; }
     if (s->total_read == 0) {
       s->start = s->resp->body;
       s->end = s->resp->body + s->resp->body_length;
