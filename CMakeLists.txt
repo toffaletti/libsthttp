@@ -26,6 +26,6 @@ add_executable(test-cares-st test-cares-st.c cares-st.c)
 target_link_libraries(test-cares-st glib-2.0 st cares)
 
 add_definitions(-DURI_USE_GLIB -D_GNU_SOURCE)
-add_executable(fget fget.c cares-st.c http_message.c)
+add_executable(fget fget.c cares-st.c http_message.c http_stream.c)
 target_link_libraries(fget glib-2.0 st cares uri http11 http11client)
 add_dependencies(fget st cares uri http11 http11client)

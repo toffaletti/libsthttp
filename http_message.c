@@ -222,9 +222,11 @@ void http_request_fwrite(http_request *req, FILE *f) {
 }
 
 void http_request_free(http_request *req) {
-  g_queue_foreach(req->headers, free_message_headers, NULL);
-  g_queue_free(req->headers);
-  g_string_chunk_free(req->chunk);
+  if (req->headers) {
+    g_queue_foreach(req->headers, free_message_headers, NULL);
+    g_queue_free(req->headers);
+  }
+  if (req->chunk) { g_string_chunk_free(req->chunk); }
 }
 
 static void message_headers_to_data(gpointer data, gpointer user_data) {
@@ -374,7 +376,9 @@ void http_response_clear(http_response *resp) {
 }
 
 void http_response_free(http_response *resp) {
-  g_queue_foreach(resp->headers, free_message_headers, NULL);
-  g_queue_free(resp->headers);
-  g_string_chunk_free(resp->chunk);
+  if (resp->headers) {
+    g_queue_foreach(resp->headers, free_message_headers, NULL);
+    g_queue_free(resp->headers);
+  }
+  if (resp->chunk) { g_string_chunk_free(resp->chunk); }
 }
