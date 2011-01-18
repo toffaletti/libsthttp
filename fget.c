@@ -25,7 +25,7 @@ static void *do_get(void *arg) {
   if (!http_stream_connect(s, u.host, u.port)) goto done;
   if (!http_stream_request(s, &u)) goto done;
 
-  ssize_t total = 0;
+  size_t total = 0;
   char buf[4 * 1024];
   for (;;) {
     ssize_t nr = http_stream_read(s, buf, sizeof(buf));

@@ -76,14 +76,75 @@ done:
   return rvalue;
 }
 
-int http_stream_request_send(struct http_stream *s) {
+ssize_t http_stream_request_send(struct http_stream *s) {
   http_request_fwrite(&s->req, stderr);
-
   GString *req_data = http_request_data(&s->req);
-  st_write(s->nfd, req_data->str, req_data->len, s->timeout);
-
+  ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
   g_string_free(req_data, TRUE);
-  return 1;
+  return nw;
+}
+
+ssize_t http_stream_response_send(struct http_stream *s) {
+  GString *req_data = http_response_data(&s->resp);
+  ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
+  g_string_free(req_data, TRUE);
+  if (s->resp.body_length) {
+    nw = st_write(s->nfd, s->resp.body, s->resp.body_length, s->timeout);
+  }
+  return nw;
+}
+
+int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
+  s->nfd = nfd;
+  size_t bpos = 0;
+  http_request_clear(&s->req);
+  do {
+    http_parser_init(&s->parser.server);
+    ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
+    fprintf(stderr, "nr: %zd\n", nr);
+    if (nr <= 0) return -1;
+    size_t pe = http_parser_execute(&s->parser.server, s->buf, bpos+nr, 0);
+    fprintf(stderr, "pe: %zu\n", pe);
+    if (http_parser_has_error(&s->parser.server)) {
+      fprintf(stderr, "parser error");
+      break;
+    }
+    if (!http_parser_is_finished(&s->parser.server)) {
+      s->blen += (4 * 1024);
+      g_assert(s->blen < (4 * 1024 * 1024));
+      s->buf = g_realloc(s->buf, s->blen);
+      bpos += nr;
+      fprintf(stderr, "bpos: %zu\n", bpos);
+      http_request_clear(&s->req);
+    }
+  } while (!http_parser_is_finished(&s->parser.server));
+
+  if (http_parser_is_finished(&s->parser.server) && !http_parser_has_error(&s->parser.server)) {
+    // TODO: probably use enum for transfer encoding
+    const gchar *transfer_encoding = http_response_header_getstr(&s->req, "Transfer-Encoding");
+    if (g_strcmp0(transfer_encoding, "chunked") == 0) {
+      s->transfer_encoding = TE_CHUNKED;
+    }
+    const gchar *content_length = http_response_header_getstr(&s->req, "Content-Length");
+    if (content_length) {
+      s->content_size = strtoull(content_length, NULL, 0);
+    } else {
+      /* pretty sure client *must* send content length if there is any */
+      s->content_size = 0;
+    }
+    fprintf(stderr, "transfer_encoding: %s\n", transfer_encoding);
+    s->start = s->req.body;
+    s->end = s->req.body + s->req.body_length;
+
+    if (http_request_header_getstr(&s->req, "Expect")) {
+      http_response_init(&s->resp, "100", "Continue");
+      printf("sending 100-continue\n");
+      ssize_t nw = http_stream_response_send(s);
+      http_response_free(&s->resp);
+      if (nw <= 0) return -1;
+    }
+  }
+  return 0;
 }
 
 int http_stream_request(struct http_stream *s, uri *u) {
@@ -182,7 +243,26 @@ static ssize_t _http_stream_read_chunked(struct http_stream *s, void *ptr, size_
 }
 
 static ssize_t _http_stream_read_server(struct http_stream *s, void *ptr, size_t size) {
-  return -1;
+  if (http_parser_has_error(&s->parser.server)) { return -1; }
+  fprintf(stderr, "req body: %p\n", s->req.body);
+
+  if (s->content_size >= 0 && (size_t)s->content_size == s->total_read) { return 0; }
+  if (s->total_read == 0 && s->req.body) {
+    s->start = s->req.body;
+    s->end = s->req.body + s->req.body_length;
+  }
+  g_assert(s->end >= s->start);
+  if (s->total_read < s->req.body_length && s->req.body_length > 0) {
+    ssize_t rvalue = min(size, (size_t)(s->end - s->start));
+    memcpy(ptr, s->start, rvalue);
+    s->start += rvalue;
+    s->total_read += rvalue;
+    return rvalue;
+  }
+  ssize_t nr = st_read(s->nfd, ptr, size, s->timeout);
+  s->total_read += nr;
+  fprintf(stderr, "read %zu bytes, %zu/%zu\n", nr, s->total_read, s->content_size);
+  return nr;
 }
 
 static ssize_t _http_stream_read_client(struct http_stream *s, void *ptr, size_t size) {

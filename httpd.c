@@ -5,85 +5,38 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
-#include "st.h"
-#include "http_message.h"
+#include "http_stream.h"
 
 #define SEC2USEC(s) ((s)*1000000LL)
 
 void *handle_connection(void *arg) {
   st_netfd_t client_nfd = (st_netfd_t)arg;
-  size_t bufsize = 2 * 1024 * 1024;
-  char *buf = g_malloc(bufsize);
-  char *mark = buf;
-  http_request req;
-  http_parser parser;
-  http_request_parser_init(&req, &parser);
+  struct http_stream *s = http_stream_create(HTTP_SERVER, SEC2USEC(10));
+  char buf[4*1024];
   for (;;) {
-    http_parser_init(&parser);
-    memset(buf, 0, bufsize);
-    size_t rb = bufsize;
-    while (!http_parser_is_finished(&parser) &&
-      !http_parser_has_error(&parser) &&
-      mark < buf+bufsize)
-    {
-      ssize_t nr = st_read(client_nfd, mark, rb, SEC2USEC(10));
-      if (nr <= 0) {
-        perror("st_read");
-        goto cleanup;
-      }
-      rb -= nr;
-      mark += nr;
-      http_parser_execute(&parser, buf, mark-buf, mark-buf - nr);
+    if (http_stream_read_request(s, client_nfd) < 0) break;
+    http_request_debug_print(&s->req);
+    size_t total = 0;
+    for (;;) {
+      ssize_t nr = http_stream_read(s, buf, sizeof(buf));
+      fprintf(stderr, "http_stream_read nr: %zd\n", nr);
+      if (nr <= 0) break;
+      /*fwrite(buf, sizeof(char), nr, stdout);*/
+      total += nr;
     }
+    fprintf(stderr, "http_stream_read total: %zu\n", total);
 
-    if (http_parser_is_finished(&parser) &&
-      !http_parser_has_error(&parser))
-    {
-      http_request_debug_print(&req);
-      printf("\n");
-      http_request_fwrite(&req, stdout);
-
-      if (http_request_header_getstr(&req, "Expect")) {
-        size_t content_length = http_request_header_getull(&req, "Content-Length");
-        http_response resp;
-        http_response_init(&resp, "100", "Continue");
-        printf("sending 100-continue\n");
-        GString *resp_data = http_response_data(&resp);
-        printf("resp data: %s", resp_data->str);
-        st_write(client_nfd, resp_data->str, resp_data->len, ST_UTIME_NO_TIMEOUT);
-        http_response_free(&resp);
-        g_string_free(resp_data, TRUE);
-        size_t nb = 0;
-        while (nb < content_length) {
-          ssize_t nr = st_read(client_nfd, buf, bufsize, SEC2USEC(10));
-          printf("got %zd bytes %zd total\n", nr, nr + nb);
-          if (nr <= 0) break;
-          nb += nr;
-        }
-
-        if (nb == content_length) {
-          printf("GOT IT ALL!\n");
-        }
-      }
-      http_response resp;
-      http_response_init_200_OK(&resp);
-      http_response_header_append(&resp, "Content-type", "text/html");
-      http_response_header_append(&resp, "Connection", "close");
-      http_response_set_body(&resp, "<H2>It worked!</H2>");
-      GString *resp_data = http_response_data(&resp);
-      st_write(client_nfd, resp_data->str, resp_data->len, ST_UTIME_NO_TIMEOUT);
-      if (resp.body_length) {
-        st_write(client_nfd, resp.body, resp.body_length, ST_UTIME_NO_TIMEOUT);
-      }
-      http_response_free(&resp);
-    }
-    http_request_clear(&req);
+    http_response_init_200_OK(&s->resp);
+    http_response_header_append(&s->resp, "Content-type", "text/html");
+    /*http_response_header_append(&s->resp, "Connection", "close");*/
+    http_response_set_body(&s->resp, "<H2>It worked!</H2>");
+    ssize_t nw = http_stream_response_send(s);
+    fprintf(stderr, "http_stream_response_send: %zd\n", nw);
+    http_response_free(&s->resp);
+    /* TODO: break loop if HTTP/1.0 and not keep-alive */
   }
-cleanup:
-  http_request_free(&req);
-  st_netfd_close(client_nfd);
-  g_free(buf);
+  fprintf(stderr, "exiting handle_connection\n");
+  http_stream_close(s);
   return NULL;
 }
 

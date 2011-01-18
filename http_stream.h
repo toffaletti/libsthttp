@@ -3,11 +3,13 @@
 #include "uri_parser.h"
 #include "http_message.h"
 
+/* transfer encoding */
 enum {
     TE_NONE = 0,
     TE_CHUNKED
 };
 
+/* stream mode */
 enum {
     HTTP_CLIENT,
     HTTP_SERVER
@@ -41,7 +43,9 @@ struct http_stream {
 
 struct http_stream *http_stream_create(int mode, st_utime_t timeout);
 int http_stream_connect(struct http_stream *s, const char *address, uint16_t port);
-int http_stream_request_send(struct http_stream *s);
+ssize_t http_stream_request_send(struct http_stream *s);
 int http_stream_request(struct http_stream *s, uri *u);
+int http_stream_read_request(struct http_stream *s, st_netfd_t nfd);
+ssize_t http_stream_response_send(struct http_stream *s);
 ssize_t http_stream_read(struct http_stream *s, void *ptr, size_t size);
 void http_stream_close(struct http_stream *s);

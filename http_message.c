@@ -227,6 +227,8 @@ void http_request_free(http_request *req) {
     g_queue_free(req->headers);
   }
   if (req->chunk) { g_string_chunk_free(req->chunk); }
+  req->headers = 0;
+  req->chunk = 0;
 }
 
 static void message_headers_to_data(gpointer data, gpointer user_data) {
@@ -381,4 +383,6 @@ void http_response_free(http_response *resp) {
     g_queue_free(resp->headers);
   }
   if (resp->chunk) { g_string_chunk_free(resp->chunk); }
+  resp->headers = 0;
+  resp->chunk = 0;
 }
