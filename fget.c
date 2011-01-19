@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  printf("sizeof(http_stream): %zu\n", sizeof(struct http_stream));
+  fprintf(stderr, "sizeof(http_stream): %zu\n", sizeof(struct http_stream));
 
   st_thread_t t = st_thread_create(do_get, argv[argc-1], 1, 1024 * 128);
   st_thread_join(t, NULL);
