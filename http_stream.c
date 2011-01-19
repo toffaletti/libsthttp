@@ -180,6 +180,8 @@ int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int 
   http_request_make(&s->req, method, request_uri);
   free(request_uri);
   http_request_header_append(&s->req, "Host", u->host);
+  /* TODO: bogus UA */
+  http_request_header_append(&s->req, "User-Agent", "Mozilla/5.0 (X11; U; Linux x86_64; en-US) AppleWebKit/534.10 (KHTML, like Gecko) Ubuntu/10.10 Chromium/8.0.552.224 Chrome/8.0.552.224 Safari/534.10");
   /* TODO: check results, handle errors */
   http_stream_request_send(s);
 
@@ -218,7 +220,7 @@ int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int 
   }
 
   GString *resp_data = http_response_data(&s->resp);
-  fprintf(stderr, "resp: %s\n", resp_data->str);
+  //fprintf(stderr, "resp: %s\n", resp_data->str);
   g_string_free(resp_data, TRUE);
 
   return (httpclient_parser_is_finished(&s->parser.client) &&

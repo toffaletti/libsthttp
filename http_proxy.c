@@ -16,7 +16,7 @@ void *handle_connection(void *arg) {
   for (;;) {
     if (http_stream_read_request(s, client_nfd) < 0) break;
     struct http_stream *cs = http_stream_create(HTTP_CLIENT, SEC2USEC(10));
-    http_request_debug_print(&s->req);
+    //http_request_debug_print(&s->req);
 
     fprintf(stderr, "request uri: %s\n", s->req.uri);
     const char *error_at = NULL;
@@ -28,6 +28,7 @@ void *handle_connection(void *arg) {
     }
     uri_normalize(&u);
     if (!http_stream_connect(cs, u.host, u.port)) goto release;
+    http_request_header_remove(&s->req, "Accept-Encoding");
     if (!http_stream_request(cs, s->req.method, &u, 0)) goto release;
 
     size_t total = 0;
@@ -36,13 +37,14 @@ void *handle_connection(void *arg) {
       fprintf(stderr, "http_stream_read nr: %zd\n", nr);
       if (nr <= 0) break;
       /*fwrite(buf, sizeof(char), nr, stdout);*/
-      ssize_t nw = st_write(s->nfd, buf, nr, s->timeout);
+      ssize_t nw = st_write(cs->nfd, buf, nr, s->timeout);
       total += nr;
     }
     fprintf(stderr, "http_stream_read total: %zu\n", total);
 
     /* TODO: properly create a new response and copy headers */
     s->resp = cs->resp;
+    s->resp.http_version = "HTTP/1.1";
     http_response_header_remove(&s->resp, "Content-Length");
     http_response_header_remove(&s->resp, "Transfer-Encoding");
     http_response_header_append(&s->resp, "Transfer-Encoding", "chunked");
