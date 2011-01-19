@@ -65,6 +65,7 @@ void *handle_connection(void *arg) {
     fprintf(stderr, "written to client: %zu\n", total);
 release:
     http_response_free(&s->resp);
+    http_request_clear(&s->req);
     uri_free(&u);
     http_stream_close(cs);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
@@ -75,7 +76,14 @@ release:
 }
 
 int main(int argc, char *argv[]) {
+  int status;
   st_init();
+  status = ares_library_init(ARES_LIB_INIT_ALL);
+  if (status != ARES_SUCCESS)
+  {
+    fprintf(stderr, "ares_library_init: %s\n", ares_strerror(status));
+    return 1;
+  }
 
   int sock;
   int n;
@@ -118,6 +126,6 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "st_thread_create error\n");
     }
   }
-
+  ares_library_cleanup();
   return EXIT_SUCCESS;
 }

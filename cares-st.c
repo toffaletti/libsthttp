@@ -9,6 +9,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+/* TODO: use getaddrinfo/getnameinfo style api. this will avoid memory leaks */
+
 /* deep copy hostent struct. memory allocation scheme
  * borrowed from ares_free_hostent.
  */
