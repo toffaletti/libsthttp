@@ -18,9 +18,6 @@ static void *do_get(void *arg) {
   uri_normalize(&u);
   fprintf(stderr, "h: %s\n", u.host);
   fprintf(stderr, "p: %u\n", u.port);
-  if (g_strcmp0(u.scheme, "http") == 0 && u.port == 0) {
-    u.port = 80;
-  }
 
   if (!http_stream_connect(s, u.host, u.port)) goto done;
   if (!http_stream_request(s, &u)) goto done;

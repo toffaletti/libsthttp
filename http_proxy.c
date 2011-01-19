@@ -15,6 +15,7 @@ void *handle_connection(void *arg) {
   char buf[4*1024];
   for (;;) {
     if (http_stream_read_request(s, client_nfd) < 0) break;
+    struct http_stream *cs = http_stream_create(HTTP_CLIENT, SEC2USEC(10));
     http_request_debug_print(&s->req);
     size_t total = 0;
     for (;;) {
@@ -26,13 +27,44 @@ void *handle_connection(void *arg) {
     }
     fprintf(stderr, "http_stream_read total: %zu\n", total);
 
-    http_response_init_200_OK(&s->resp);
-    http_response_header_append(&s->resp, "Content-type", "text/html");
-    /*http_response_header_append(&s->resp, "Connection", "close");*/
-    http_response_set_body(&s->resp, "<H2>It worked!</H2>");
-    ssize_t nw = http_stream_response_send(s, 1);
+    fprintf(stderr, "request uri: %s\n", s->req.uri);
+    const char *error_at = NULL;
+    uri u;
+    uri_init(&u);
+    if (uri_parse(&u, s->req.uri, strlen(s->req.uri), &error_at) == 0) {
+      fprintf(stderr, "uri_parse error: %s\n", error_at);
+      goto release;
+    }
+    uri_normalize(&u);
+    if (!http_stream_connect(cs, u.host, u.port)) goto release;
+    if (!http_stream_request(cs, &u)) goto release;
+
+    /* TODO: properly create a new response and copy headers */
+    s->resp = cs->resp;
+    http_response_header_remove(&s->resp, "Content-Length");
+    http_response_header_remove(&s->resp, "Transfer-Encoding");
+    http_response_header_append(&s->resp, "Transfer-Encoding", "chunked");
+    ssize_t nw = http_stream_response_send(s, 0);
+    memset(&s->resp, 0, sizeof(http_response));
     fprintf(stderr, "http_stream_response_send: %zd\n", nw);
+
+    total = 0;
+    for (;;) {
+      ssize_t nr = http_stream_read(cs, buf, sizeof(buf));
+      fprintf(stderr, "http_stream_read nr: %zd\n", nr);
+      if (nr <= 0) break;
+      /*fwrite(buf, sizeof(char), nr, stdout);*/
+      total += nr;
+      ssize_t nw = http_stream_send_chunk(s, buf, nr);
+      printf("chunk nr: %zd chunk nw: %zd\n", nr, nw);
+      if (nw <= 0 || nw < nr) break;
+    }
+    http_stream_send_chunk_end(s);
+    fprintf(stderr, "written to client: %zu\n", total);
+release:
     http_response_free(&s->resp);
+    uri_free(&u);
+    http_stream_close(cs);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
   }
   fprintf(stderr, "exiting handle_connection\n");

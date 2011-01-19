@@ -76,6 +76,28 @@ done:
   return rvalue;
 }
 
+ssize_t http_stream_send_chunk(struct http_stream *s, const char *buf, size_t size) {
+  const char endbuf[] = "\r\n";
+  char lenbuf[64];
+  struct iovec vec[3];
+  int len = snprintf(lenbuf, sizeof(lenbuf)-1, "%zx\r\n", size);
+  if (len <= 0) return len;
+  vec[0].iov_base = lenbuf;
+  vec[0].iov_len = len;
+  vec[1].iov_base = (char *)buf;
+  vec[1].iov_len = size;
+  vec[2].iov_base = (char *)endbuf;
+  vec[2].iov_len = 2;
+
+  ssize_t nw = st_writev(s->nfd, vec, 3, s->timeout);
+  return nw;
+}
+
+ssize_t http_stream_send_chunk_end(struct http_stream *s) {
+  ssize_t nw = st_write(s->nfd, "0\r\n\r\n", 5, s->timeout);
+  return nw;
+}
+
 ssize_t http_stream_request_send(struct http_stream *s) {
   http_request_fwrite(&s->req, stderr);
   GString *req_data = http_request_data(&s->req);
@@ -84,11 +106,11 @@ ssize_t http_stream_request_send(struct http_stream *s) {
   return nw;
 }
 
-ssize_t http_stream_response_send(struct http_stream *s) {
+ssize_t http_stream_response_send(struct http_stream *s, int body) {
   GString *req_data = http_response_data(&s->resp);
   ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
   g_string_free(req_data, TRUE);
-  if (s->resp.body_length) {
+  if (body && s->resp.body_length) {
     nw = st_write(s->nfd, s->resp.body, s->resp.body_length, s->timeout);
   }
   return nw;
@@ -101,7 +123,7 @@ int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
   do {
     http_parser_init(&s->parser.server);
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
-    fprintf(stderr, "nr: %zd\n", nr);
+    fprintf(stderr, "read_request nr: %zd\n", nr);
     if (nr <= 0) return -1;
     size_t pe = http_parser_execute(&s->parser.server, s->buf, bpos+nr, 0);
     fprintf(stderr, "pe: %zu\n", pe);
@@ -139,7 +161,7 @@ int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
     if (http_request_header_getstr(&s->req, "Expect")) {
       http_response_init(&s->resp, "100", "Continue");
       printf("sending 100-continue\n");
-      ssize_t nw = http_stream_response_send(s);
+      ssize_t nw = http_stream_response_send(s, 0);
       http_response_free(&s->resp);
       if (nw <= 0) return -1;
     }
