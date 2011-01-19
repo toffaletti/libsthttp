@@ -169,11 +169,16 @@ int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
   return 0;
 }
 
-int http_stream_request(struct http_stream *s, uri *u) {
+int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int full_uri) {
   g_assert(s->mode == HTTP_CLIENT);
-  fprintf(stderr, "p: %s\n", u->path);
-
-  http_request_make(&s->req, "GET", u->path);
+  char *request_uri = NULL;
+  if (full_uri)
+    request_uri = uri_compose(u);
+  else
+    request_uri = uri_compose_partial(u);
+  fprintf(stderr, "request URI: %s\n", request_uri);
+  http_request_make(&s->req, method, request_uri);
+  free(request_uri);
   http_request_header_append(&s->req, "Host", u->host);
   /* TODO: check results, handle errors */
   http_stream_request_send(s);

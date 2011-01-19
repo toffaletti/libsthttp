@@ -17,15 +17,6 @@ void *handle_connection(void *arg) {
     if (http_stream_read_request(s, client_nfd) < 0) break;
     struct http_stream *cs = http_stream_create(HTTP_CLIENT, SEC2USEC(10));
     http_request_debug_print(&s->req);
-    size_t total = 0;
-    for (;;) {
-      ssize_t nr = http_stream_read(s, buf, sizeof(buf));
-      fprintf(stderr, "http_stream_read nr: %zd\n", nr);
-      if (nr <= 0) break;
-      /*fwrite(buf, sizeof(char), nr, stdout);*/
-      total += nr;
-    }
-    fprintf(stderr, "http_stream_read total: %zu\n", total);
 
     fprintf(stderr, "request uri: %s\n", s->req.uri);
     const char *error_at = NULL;
@@ -37,7 +28,18 @@ void *handle_connection(void *arg) {
     }
     uri_normalize(&u);
     if (!http_stream_connect(cs, u.host, u.port)) goto release;
-    if (!http_stream_request(cs, &u)) goto release;
+    if (!http_stream_request(cs, s->req.method, &u, 0)) goto release;
+
+    size_t total = 0;
+    for (;;) {
+      ssize_t nr = http_stream_read(s, buf, sizeof(buf));
+      fprintf(stderr, "http_stream_read nr: %zd\n", nr);
+      if (nr <= 0) break;
+      /*fwrite(buf, sizeof(char), nr, stdout);*/
+      ssize_t nw = st_write(s->nfd, buf, nr, s->timeout);
+      total += nr;
+    }
+    fprintf(stderr, "http_stream_read total: %zu\n", total);
 
     /* TODO: properly create a new response and copy headers */
     s->resp = cs->resp;
