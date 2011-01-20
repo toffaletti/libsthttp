@@ -274,7 +274,10 @@ static void reason_phrase_cl(void *data, const char *at, size_t length) {
 
 static void status_code_cl(void *data, const char *at, size_t length) {
   http_response *resp = (http_response *)data;
-  resp->status_code = g_string_chunk_insert_len(resp->chunk, at, length);
+  char s = at[length];
+  ((char *)at)[length] = 0;
+  resp->status_code = strtoul(at, NULL, 0);
+  ((char *)at)[length] = s;
 }
 
 static void chunk_size_cl(void *data, const char *at, size_t length) {
@@ -307,14 +310,14 @@ static void last_chunk_cl(void *data, const char *at, size_t length) {
 }
 
 void http_response_init_200_OK(http_response *resp) {
-  http_response_init(resp, "200", "OK");
+  http_response_init(resp, 200, "OK");
 }
 
-void http_response_init(http_response *resp, const gchar *code, const gchar *reason) {
+void http_response_init(http_response *resp, unsigned long code, const gchar *reason) {
   resp->chunk = g_string_chunk_new(1024 * 4);
   resp->headers = g_queue_new();
   resp->http_version = g_string_chunk_insert(resp->chunk, "HTTP/1.1");
-  resp->status_code = g_string_chunk_insert(resp->chunk, code);
+  resp->status_code = code;
   resp->reason = g_string_chunk_insert(resp->chunk, reason);
   resp->body = NULL;
   resp->body_length = 0;
@@ -326,7 +329,7 @@ void http_response_parser_init(http_response *resp, httpclient_parser *p) {
   resp->chunk = g_string_chunk_new(1024 * 4);
   resp->headers = g_queue_new();
   resp->http_version = NULL;
-  resp->status_code = NULL;
+  resp->status_code = 0;
   resp->reason = NULL;
   resp->body = NULL;
   resp->body_length = 0;
@@ -353,7 +356,7 @@ void http_response_set_body(http_response *resp, const gchar *body) {
 
 GString *http_response_data(http_response *resp) {
   GString *s = g_string_sized_new(1024);
-  g_string_printf(s, "%s %s %s\r\n", resp->http_version,
+  g_string_printf(s, "%s %lu %s\r\n", resp->http_version,
     resp->status_code, resp->reason);
   /* TODO: maybe add required headers like content-length */
   g_queue_foreach(resp->headers, message_headers_to_data, s);
@@ -363,7 +366,7 @@ GString *http_response_data(http_response *resp) {
 
 void http_response_clear(http_response *resp) {
   resp->http_version = NULL;
-  resp->status_code = NULL;
+  resp->status_code = 0;
   resp->reason = NULL;
   resp->body = NULL;
   resp->body_length = 0;

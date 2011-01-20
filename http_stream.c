@@ -101,6 +101,7 @@ ssize_t http_stream_send_chunk_end(struct http_stream *s) {
 ssize_t http_stream_request_send(struct http_stream *s) {
   http_request_fwrite(&s->req, stderr);
   GString *req_data = http_request_data(&s->req);
+  fprintf(stderr, "REQ: %s\n", req_data->str);
   ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
   g_string_free(req_data, TRUE);
   return nw;
@@ -116,7 +117,8 @@ ssize_t http_stream_response_send(struct http_stream *s, int body) {
   return nw;
 }
 
-int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
+int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
+  g_assert(s->mode == HTTP_SERVER);
   s->nfd = nfd;
   size_t bpos = 0;
   http_request_clear(&s->req);
@@ -132,9 +134,11 @@ int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
       break;
     }
     if (!http_parser_is_finished(&s->parser.server)) {
-      s->blen += (4 * 1024);
-      g_assert(s->blen < (4 * 1024 * 1024));
-      s->buf = g_realloc(s->buf, s->blen);
+      if (bpos+nr+1024 >= s->blen) {
+        s->blen += (4 * 1024);
+        g_assert(s->blen < (4 * 1024 * 1024));
+        s->buf = g_realloc(s->buf, s->blen);
+      }
       bpos += nr;
       fprintf(stderr, "bpos: %zu\n", bpos);
       http_request_clear(&s->req);
@@ -159,7 +163,7 @@ int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
     s->end = s->req.body + s->req.body_length;
 
     if (http_request_header_getstr(&s->req, "Expect")) {
-      http_response_init(&s->resp, "100", "Continue");
+      http_response_init(&s->resp, 100, "Continue");
       printf("sending 100-continue\n");
       ssize_t nw = http_stream_response_send(s, 0);
       http_response_free(&s->resp);
@@ -169,13 +173,8 @@ int http_stream_read_request(struct http_stream *s, st_netfd_t nfd) {
   return 0;
 }
 
-int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int full_uri) {
-  g_assert(s->mode == HTTP_CLIENT);
-  char *request_uri = NULL;
-  if (full_uri)
-    request_uri = uri_compose(u);
-  else
-    request_uri = uri_compose_partial(u);
+int http_stream_request_init(struct http_stream *s, const char *method, uri *u) {
+  char *request_uri = uri_compose_partial(u);
   fprintf(stderr, "request URI: %s\n", request_uri);
   http_request_make(&s->req, method, request_uri);
   free(request_uri);
@@ -183,13 +182,17 @@ int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int 
   /* TODO: bogus UA */
   http_request_header_append(&s->req, "User-Agent", "Mozilla/5.0 (X11; U; Linux x86_64; en-US) AppleWebKit/534.10 (KHTML, like Gecko) Ubuntu/10.10 Chromium/8.0.552.224 Chrome/8.0.552.224 Safari/534.10");
   /* TODO: check results, handle errors */
-  http_stream_request_send(s);
+  return 1;
+}
+
+int http_stream_response_read(struct http_stream *s) {
+  g_assert(s->mode == HTTP_CLIENT);
 
   size_t bpos = 0;
   do {
     httpclient_parser_init(&s->parser.client);
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
-    fprintf(stderr, "nr: %zd\n", nr);
+    if (nr <= 0) break;
     size_t pe = httpclient_parser_execute(&s->parser.client, s->buf, bpos+nr, 0);
     fprintf(stderr, "pe: %zu\n", pe);
     if (httpclient_parser_has_error(&s->parser.client)) {
@@ -197,9 +200,11 @@ int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int 
       break;
     }
     if (!httpclient_parser_is_finished(&s->parser.client)) {
-      s->blen += (4 * 1024);
-      g_assert(s->blen < (4 * 1024 * 1024));
-      s->buf = g_realloc(s->buf, s->blen);
+      if (bpos+nr+1024 >= s->blen) {
+        s->blen += (4 * 1024);
+        g_assert(s->blen < (4 * 1024 * 1024));
+        s->buf = g_realloc(s->buf, s->blen);
+      }
       bpos += nr;
       fprintf(stderr, "bpos: %zu\n", bpos);
       http_response_clear(&s->resp);
@@ -219,9 +224,9 @@ int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int 
     s->end = s->resp.body + s->resp.body_length;
   }
 
-  GString *resp_data = http_response_data(&s->resp);
+  //GString *resp_data = http_response_data(&s->resp);
   //fprintf(stderr, "resp: %s\n", resp_data->str);
-  g_string_free(resp_data, TRUE);
+  //g_string_free(resp_data, TRUE);
 
   return (httpclient_parser_is_finished(&s->parser.client) &&
     !httpclient_parser_has_error(&s->parser.client));
@@ -297,6 +302,8 @@ static ssize_t _http_stream_read_server(struct http_stream *s, void *ptr, size_t
 static ssize_t _http_stream_read_client(struct http_stream *s, void *ptr, size_t size) {
   if (httpclient_parser_has_error(&s->parser.client)) { return -1; }
   g_assert(s->resp.body);
+  /* status 204 means no body */
+  if (s->resp.status_code == 204) { return 0; }
 
   if (s->transfer_encoding == TE_CHUNKED) {
     return _http_stream_read_chunked(s, ptr, size);

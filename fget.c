@@ -20,7 +20,9 @@ static void *do_get(void *arg) {
   fprintf(stderr, "p: %u\n", u.port);
 
   if (!http_stream_connect(s, u.host, u.port)) goto done;
-  if (!http_stream_request(s, "GET", &u, 0)) goto done;
+  if (!http_stream_request_init(s, "GET", &u)) goto done;
+  if (!http_stream_request_send(s)) goto done;
+  if (!http_stream_response_read(s)) goto done;
 
   size_t total = 0;
   char buf[4 * 1024];

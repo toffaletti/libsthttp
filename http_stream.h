@@ -44,8 +44,9 @@ struct http_stream {
 extern struct http_stream *http_stream_create(int mode, st_utime_t timeout);
 extern int http_stream_connect(struct http_stream *s, const char *address, uint16_t port);
 extern ssize_t http_stream_request_send(struct http_stream *s);
-extern int http_stream_request(struct http_stream *s, const gchar *method, uri *u, int full_uri);
-extern int http_stream_read_request(struct http_stream *s, st_netfd_t nfd);
+extern int http_stream_request_init(struct http_stream *s, const char *method, uri *u);
+extern int http_stream_response_read(struct http_stream *s);
+extern int http_stream_request_read(struct http_stream *s, st_netfd_t nfd);
 extern ssize_t http_stream_response_send(struct http_stream *s, int body);
 extern ssize_t http_stream_read(struct http_stream *s, void *ptr, size_t size);
 extern ssize_t http_stream_send_chunk(struct http_stream *s, const char *buf, size_t size);

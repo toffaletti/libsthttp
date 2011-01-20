@@ -14,7 +14,7 @@ void *handle_connection(void *arg) {
   struct http_stream *s = http_stream_create(HTTP_SERVER, SEC2USEC(10));
   char buf[4*1024];
   for (;;) {
-    if (http_stream_read_request(s, client_nfd) < 0) break;
+    if (http_stream_request_read(s, client_nfd) < 0) break;
     http_request_debug_print(&s->req);
     size_t total = 0;
     for (;;) {

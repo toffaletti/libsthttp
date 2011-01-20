@@ -20,7 +20,7 @@ typedef struct http_response {
   GStringChunk *chunk; /* string pool */
   GQueue *headers;
   gchar *http_version;
-  gchar *status_code;
+  unsigned long status_code;
   gchar *reason;
   const gchar *body;
   size_t body_length;
@@ -91,7 +91,7 @@ extern void http_request_free(http_request *req);
 
 extern void http_response_parser_init(http_response *resp, httpclient_parser *p);
 extern void http_response_init_200_OK(http_response *resp);
-extern void http_response_init(http_response *resp, const gchar *code, const gchar *reason);
+extern void http_response_init(http_response *resp, unsigned long code, const gchar *reason);
 extern GString *http_response_data(http_response *resp);
 extern void http_response_set_body(http_response *resp, const gchar *body);
 extern void http_response_clear(http_response *resp);

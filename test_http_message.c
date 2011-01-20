@@ -321,8 +321,8 @@ static void test_http_request_headers(void) {
 
 static void test_http_response_init(void) {
   http_response resp;
-  http_response_init(&resp, "200", "OK");
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  http_response_init(&resp, 200, "OK");
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(resp.body == NULL);
@@ -332,7 +332,7 @@ static void test_http_response_init(void) {
 static void test_http_response_init_200_OK(void) {
   http_response resp;
   http_response_init_200_OK(&resp);
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(resp.body == NULL);
@@ -344,7 +344,7 @@ static void test_http_response_data(void) {
   http_response_init_200_OK(&resp);
   http_response_header_append(&resp, "Host", "localhost");
   http_response_header_append(&resp, "Content-Length", "0");
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(resp.body == NULL);
@@ -369,7 +369,7 @@ static void test_http_response_body(void) {
   char numstr[32];
   snprintf(numstr, sizeof(numstr), "%zu", strlen(body));
   http_response_set_body(&resp, body);
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
   g_assert(g_strcmp0(body, resp.body) == 0);
@@ -422,7 +422,7 @@ static void test_http_response_parser_normalize_header_names(void) {
   g_assert(httpclient_parser_is_finished(&parser));
 
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("this is a test.\r\nthis is only a test.", resp.body) == 0);
   g_assert(g_strcmp0("37", http_response_header_getstr(&resp, "Content-Length")) == 0);
@@ -455,7 +455,7 @@ static void test_http_response_parser_p0(void) {
   g_assert(httpclient_parser_is_finished(&parser));
 
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("this is a test.\r\nthis is only a test.", resp.body) == 0);
   g_assert(g_strcmp0("37", http_response_header_getstr(&resp, "Content-Length")) == 0);
@@ -484,7 +484,7 @@ static void test_http_response_parser_p1(void) {
   g_assert(parser.data == &resp);
 
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("37", http_response_header_getstr(&resp, "Content-Length")) == 0);
   g_assert(g_strcmp0("text/plain", http_response_header_getstr(&resp, "Content-Type")) == 0);
@@ -519,7 +519,7 @@ static void test_http_response_parser_chunked(void) {
   g_assert(httpclient_parser_is_finished(&parser));
 
   g_assert(g_strcmp0("HTTP/1.1", resp.http_version) == 0);
-  g_assert(g_strcmp0("200", resp.status_code) == 0);
+  g_assert(resp.status_code == 200);
   g_assert(g_strcmp0("OK", resp.reason) == 0);
   g_assert(g_strcmp0("text/plain", http_response_header_getstr(&resp, "Content-Type")) == 0);
   g_assert(g_strcmp0("chunked", http_response_header_getstr(&resp, "Transfer-Encoding")) == 0);
