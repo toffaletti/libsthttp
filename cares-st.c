@@ -9,6 +9,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+#define SEC2USEC(s) ((s)*1000000LL)
+
+static __thread int _need_init = 1;
+static __thread ares_channel _channel;
+
 /* TODO: use getaddrinfo/getnameinfo style api. this will avoid memory leaks */
 
 /* deep copy hostent struct. memory allocation scheme
@@ -84,10 +89,10 @@ static void pollfd_to_fd_sets(struct pollfd *fds, int nfds, fd_set *read_fds, fd
 
 static void gethostbyname_callback(void *arg, int status, int timeouts, struct hostent *host) {
   struct hostent **_host = (struct hostent **)arg;
-
+  (void)timeouts; /* the number of times the quest timed out during request */
   if (status != ARES_SUCCESS)
   {
-    fprintf(stderr, "%s\n", ares_strerror(status));
+    fprintf(stderr, "ARES: %s\n", ares_strerror(status));
     return;
   }
 
@@ -95,13 +100,17 @@ static void gethostbyname_callback(void *arg, int status, int timeouts, struct h
 }
 
 int st_gethostbyname_r(const char *name, struct hostent **host) {
-  int status;
-  ares_channel channel;
   *host = NULL;
-  status = ares_init(&channel);
-  if (status != ARES_SUCCESS) goto cleanup;
+  if (_need_init) {
+    int status = ares_init(&_channel);
+    if (status != ARES_SUCCESS) {
+      ares_destroy(_channel);
+      return status;
+    }
+    _need_init = 0;
+  }
 
-  ares_gethostbyname(channel, name, AF_INET, gethostbyname_callback, host);
+  ares_gethostbyname(_channel, name, AF_INET, gethostbyname_callback, host);
 
   fd_set read_fds, write_fds;
   struct timeval *tvp, tv;
@@ -110,23 +119,21 @@ int st_gethostbyname_r(const char *name, struct hostent **host) {
   {
     FD_ZERO(&read_fds);
     FD_ZERO(&write_fds);
-    max_fd = ares_fds(channel, &read_fds, &write_fds);
+    max_fd = ares_fds(_channel, &read_fds, &write_fds);
     if (max_fd == 0)
       break;
 
     struct pollfd *fds;
     fd_sets_to_pollfd(&read_fds, &write_fds, max_fd, &fds, &nfds);
-    tvp = ares_timeout(channel, NULL, &tv);
+    tvp = ares_timeout(_channel, NULL, &tv);
     /*select(nfds, &read_fds, &write_fds, NULL, tvp); */
     /* TODO: get timeout working */
-    if (st_poll(fds, nfds, ST_UTIME_NO_TIMEOUT) == -1) {
+    if (st_poll(fds, nfds, SEC2USEC(tvp->tv_sec)+tvp->tv_usec) == -1) {
       /* TODO: handle errors here */
     }
     pollfd_to_fd_sets(fds, nfds, &read_fds, &write_fds);
     free(fds);
-    ares_process(channel, &read_fds, &write_fds);
+    ares_process(_channel, &read_fds, &write_fds);
   }
-cleanup:
-  ares_destroy(channel);
-  return status;
+  return ARES_SUCCESS;
 }

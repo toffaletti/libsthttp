@@ -99,9 +99,10 @@ release:
 }
 
 int main(int argc, char *argv[]) {
-  int status;
+
+  g_assert(st_set_eventsys(ST_EVENTSYS_ALT) == 0);
   st_init();
-  status = ares_library_init(ARES_LIB_INIT_ALL);
+  int status = ares_library_init(ARES_LIB_INIT_ALL);
   if (status != ARES_SUCCESS)
   {
     fprintf(stderr, "ares_library_init: %s\n", ares_strerror(status));

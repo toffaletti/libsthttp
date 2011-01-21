@@ -14,7 +14,8 @@
   unsafe = (CTL | " " | "\"" | "#" | "%" | "<" | ">");
   national = any -- (alpha | digit | reserved | extra | safe | unsafe);
   unreserved = (alpha | digit | safe | extra | national);
-  escape = ("%" xdigit xdigit);
+# add support for %uXXXX for unicode. this is a non-standard implemented in EMCA-Script escape()
+  escape = ("%" xdigit xdigit) | ("%u" xdigit xdigit xdigit xdigit);
   uchar = (unreserved | escape);
   pchar = (uchar | ":" | "@" | "&" | "=" | "+");
   tspecials = ("(" | ")" | "<" | ">" | "@" | "," | ";" | ":" | "\\" | "\"" | "/" | "[" | "]" | "?" | "=" | "{" | "}" | " " | "\t");

@@ -99,9 +99,9 @@ ssize_t http_stream_send_chunk_end(struct http_stream *s) {
 }
 
 ssize_t http_stream_request_send(struct http_stream *s) {
-  http_request_fwrite(&s->req, stderr);
+  //http_request_fwrite(&s->req, stderr);
   GString *req_data = http_request_data(&s->req);
-  fprintf(stderr, "REQ: %s\n", req_data->str);
+  //fprintf(stderr, "REQ: %s\n", req_data->str);
   ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
   g_string_free(req_data, TRUE);
   return nw;
@@ -130,7 +130,7 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
     size_t pe = http_parser_execute(&s->parser.server, s->buf, bpos+nr, 0);
     fprintf(stderr, "pe: %zu\n", pe);
     if (http_parser_has_error(&s->parser.server)) {
-      fprintf(stderr, "parser error");
+      fprintf(stderr, "http_stream_request_read parser error\n");
       break;
     }
     if (!http_parser_is_finished(&s->parser.server)) {
@@ -170,7 +170,8 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
       if (nw <= 0) return -1;
     }
   }
-  return 0;
+  return (http_parser_is_finished(&s->parser.server) &&
+    !http_parser_has_error(&s->parser.server));
 }
 
 int http_stream_request_init(struct http_stream *s, const char *method, uri *u) {
@@ -235,19 +236,24 @@ int http_stream_response_read(struct http_stream *s) {
 static ssize_t _http_stream_read_chunked(struct http_stream *s, void *ptr, size_t size) {
   fprintf(stderr, "start: %p end: %p len: %zd\n", s->start, s->end, s->end - s->start);
   fprintf(stderr, "chunk_read: %zu/%zu\n", s->chunk_read, s->resp.chunk_size);
-  if (s->chunk_read > 0 && s->chunk_read == s->resp.chunk_size) {
-    fprintf(stderr, "CHUNK DONE\n");
-    s->chunk_read = 0;
-    // XXX: fix this because it might advance past end
-    s->start += 2; // crlf
-  }
-  g_assert(s->start <= s->end);
-
   if (s->start == s->end) {
     size_t nr = st_read(s->nfd, s->buf, s->blen, s->timeout);
     s->start = s->buf;
     s->end = s->buf + nr;
   }
+  if (s->chunk_read > 0 && s->chunk_read == s->resp.chunk_size) {
+    fprintf(stderr, "CHUNK DONE\n");
+    s->chunk_read = 0;
+    if (s->start+2 >= s->end) {
+      size_t skip = 2 - (s->end - s->start); // skip crlf
+      size_t nr = st_read(s->nfd, s->buf, s->blen, s->timeout);
+      s->start = s->buf+skip;
+      s->end = s->buf + nr;
+    } else {
+      s->start += 2; // crlf
+    }
+  }
+  g_assert(s->start <= s->end);
 
   if (s->chunk_read == 0) {
     http_response_clear(&s->resp);
