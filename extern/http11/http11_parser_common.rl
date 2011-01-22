@@ -16,7 +16,9 @@
   unreserved = (alpha | digit | safe | extra | national);
 # add support for %uXXXX for unicode. this is a non-standard implemented in EMCA-Script escape()
 # add %% and % xdigit for some crazy broken URLs, seen both in the wild.
-  escape = "%%" | ("%" xdigit xdigit?) | ("%u" xdigit xdigit xdigit xdigit);
+# add % ^xdigit for bad urls
+# TODO: maybe i should just relax this to not validate the encoding
+  escape = "%%" | ("%" xdigit xdigit?) | ("%u" xdigit xdigit xdigit xdigit) | ("%" ^digit);
   uchar = (unreserved | escape);
   pchar = (uchar | ":" | "@" | "&" | "=" | "+");
   tspecials = ("(" | ")" | "<" | ">" | "@" | "," | ";" | ":" | "\\" | "\"" | "/" | "[" | "]" | "?" | "=" | "{" | "}" | " " | "\t");

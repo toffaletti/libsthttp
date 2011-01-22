@@ -99,6 +99,39 @@ static void test_http_request_parser_normalize_header_names(void) {
   g_free(data);
 }
 
+static void test_http_request_parser_headers(void) {
+  http_request req;
+  http_parser parser;
+  http_request_parser_init(&req, &parser);
+  static const char *sdata =
+  "GET http://b.scorecardresearch.com/b?C1=8&C2=6035047&C3=463.9924&C4=ad21868c&C5=173229&C6=16jfaue1ukmeoq&C7=http%3A//remotecontrol.mtv.com/2011/01/20/sammi-sweetheart-giancoloa-terrell-owens-hair/&C8=Hot%20Shots%3A%20Sammi%20%u2018Sweetheart%u2019%20Lets%20Terrell%20Owens%20Play%20With%20Her%20Hair%20%BB%20MTV%20Remote%20Control%20Blog&C9=&C10=1680x1050&rn=58013009 HTTP/1.1\r\n"
+  "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
+  "Host: localhost:8080\r\n"
+  "Accept: */*\r\n"
+  "Accept-Encoding: gzip,deflate,sdch\r\n"
+  "Accept-Language: en-US,en;q=0.8\r\n"
+  "Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3\r\n"
+  "Cookie: UID=11f039-200.050.203.060-1205406020\r\n"
+  "\r\n";
+  http_parser_init(&parser);
+  char *data = g_strdup(sdata);
+  http_parser_execute(&parser, data, strlen(data), 0);
+  g_assert(!http_parser_has_error(&parser));
+  g_assert(http_parser_is_finished(&parser));
+  g_assert(g_strcmp0(req.method, "GET") == 0);
+  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req.body, NULL) == 0);
+  g_assert(req.body_length == 0);
+
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+    "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+
+  http_request_free(&req);
+  g_free(data);
+}
+
 static void test_http_request_parser_unicode_escape(void) {
   http_request req;
   http_parser parser;
@@ -110,22 +143,10 @@ static void test_http_request_parser_unicode_escape(void) {
   "Accept: */*\r\n\r\n";
   http_parser_init(&parser);
   char *data = g_strdup(sdata);
-  char *p = data;
-  while (!http_parser_is_finished(&parser) &&
-    !http_parser_has_error(&parser) &&
-    *p != 0)
-  {
-    p += 1; /* feed parser 1 byte at a time */
-    http_parser_execute(&parser, data, p-data, p-data-1);
-  }
+  http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
   g_assert(g_strcmp0(req.method, "GET") == 0);
-#if 0
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
-#endif
   g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
   g_assert(g_strcmp0(req.body, NULL) == 0);
   g_assert(req.body_length == 0);
@@ -150,14 +171,37 @@ static void test_http_request_parser_percents(void) {
   "Accept: */*\r\n\r\n";
   http_parser_init(&parser);
   char *data = g_strdup(sdata);
-  char *p = data;
-  while (!http_parser_is_finished(&parser) &&
-    !http_parser_has_error(&parser) &&
-    *p != 0)
-  {
-    p += 1; /* feed parser 1 byte at a time */
-    http_parser_execute(&parser, data, p-data, p-data-1);
-  }
+  http_parser_execute(&parser, data, strlen(data), 0);
+  g_assert(!http_parser_has_error(&parser));
+  g_assert(http_parser_is_finished(&parser));
+  g_assert(g_strcmp0(req.method, "GET") == 0);
+  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req.body, NULL) == 0);
+  g_assert(req.body_length == 0);
+
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+    "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+
+  http_request_free(&req);
+  g_free(data);
+}
+
+static void test_http_request_parser_bad_percents(void) {
+  http_request req;
+  http_parser parser;
+  http_request_parser_init(&req, &parser);
+  /* this site likes to truncate urls included in their requests, which means they chop up % encoding in the original urls */
+  /* for example in this url: Trends%2C%&cv= */
+  static const char *sdata =
+  "GET http://b.scorecardresearch.com/b?c1=8&c2=3005693&rn=698454542&c7=http%3A%2F%2Fwww.readwriteweb.com%2F&c3=1&c4=http%3A%2F%2Fwww.readwriteweb.com%2F&c8=ReadWriteWeb%20-%20Web%20Apps%2C%20Web%20Technology%20Trends%2C%&cv=2.2&cs=js HTTP/1.1\r\n"
+  "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
+  "Host: localhost:8080\r\n"
+  "Accept: */*\r\n\r\n";
+  http_parser_init(&parser);
+  char *data = g_strdup(sdata);
+  http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
   g_assert(g_strcmp0(req.method, "GET") == 0);
@@ -657,6 +701,8 @@ int main(int argc, char *argv[]) {
   g_test_add_func("/http/request/parser/normalize_header_names", test_http_request_parser_normalize_header_names);
   g_test_add_func("/http/request/parser/unicode_escape", test_http_request_parser_unicode_escape);
   g_test_add_func("/http/request/parser/percents", test_http_request_parser_percents);
+  g_test_add_func("/http/request/parser/bad_percents", test_http_request_parser_bad_percents);
+  g_test_add_func("/http/request/parser/headers", test_http_request_parser_headers);
   g_test_add_func("/http/request/parser/p0", test_http_request_parser_p0);
   g_test_add_func("/http/request/parser/p1", test_http_request_parser_p1);
   g_test_add_func("/http/request/parser/p2", test_http_request_parser_p2);
