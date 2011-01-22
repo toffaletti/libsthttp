@@ -307,7 +307,6 @@ static ssize_t _http_stream_read_server(struct http_stream *s, void *ptr, size_t
 
 static ssize_t _http_stream_read_client(struct http_stream *s, void *ptr, size_t size) {
   if (httpclient_parser_has_error(&s->parser.client)) { return -1; }
-  g_assert(s->resp.body);
   /* status 204 means no body */
   if (s->resp.status_code == 204) { return 0; }
 
@@ -315,12 +314,12 @@ static ssize_t _http_stream_read_client(struct http_stream *s, void *ptr, size_t
     return _http_stream_read_chunked(s, ptr, size);
   } else {
     if (s->content_size >= 0 && (size_t)s->content_size == s->total_read) { return 0; }
-    if (s->total_read == 0) {
+    if (s->total_read == 0 && s->resp.body) {
       s->start = s->resp.body;
       s->end = s->resp.body + s->resp.body_length;
     }
-    g_assert(s->end >= s->start);
     if (s->total_read < s->resp.body_length) {
+      g_assert(s->end >= s->start);
       ssize_t rvalue = min(size, (size_t)(s->end - s->start));
       memcpy(ptr, s->start, rvalue);
       s->start += rvalue;
