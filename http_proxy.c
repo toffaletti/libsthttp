@@ -14,27 +14,34 @@ void *handle_connection(void *arg) {
   struct http_stream *s = http_stream_create(HTTP_SERVER, SEC2USEC(30));
   char buf[4*1024];
   int error = 0;
+  struct http_stream *cs = NULL;
+  uri u;
   for (;;) {
-    if (http_stream_request_read(s, client_nfd) < 0) break;
-    struct http_stream *cs = http_stream_create(HTTP_CLIENT, SEC2USEC(30));
+    memset(&u, 0, sizeof(u));
+    cs = NULL;
+    error = 0;
+    int status = http_stream_request_read(s, client_nfd);
+    if (status < 0) { error = 400; goto release; }
+    if (status == 0) { error = 1; goto release; }
+    cs = http_stream_create(HTTP_CLIENT, SEC2USEC(30));
     //http_request_debug_print(&s->req);
 
     fprintf(stderr, "request uri: %s\n", s->req.uri);
     const char *error_at = NULL;
-    uri u;
     uri_init(&u);
     if (uri_parse(&u, s->req.uri, strlen(s->req.uri), &error_at) == 0) {
       fprintf(stderr, "uri_parse error: %s\n", error_at);
+      error = 400;
       goto release;
     }
     uri_normalize(&u);
-    if (!http_stream_connect(cs, u.host, u.port)) { error = 1; goto release; }
+    if (!http_stream_connect(cs, u.host, u.port)) { error = 504; goto release; }
     http_request_header_remove(&s->req, "Accept-Encoding");
     http_request_header_remove(&s->req, "Proxy-Connection");
     cs->req = s->req;
     char *request_uri = uri_compose_partial(&u);
     cs->req.uri = request_uri;
-    if (!http_stream_request_send(cs)) { error = 1; goto release; }
+    if (!http_stream_request_send(cs)) { error = 504; goto release; }
     memset(&cs->req, 0, sizeof(http_request));
     free(request_uri);
 
@@ -51,7 +58,7 @@ void *handle_connection(void *arg) {
     }
     fprintf(stderr, "http_stream_read total: %zu\n", total);
 
-    if (!http_stream_response_read(cs)) { error=1; goto release; }
+    if (!http_stream_response_read(cs)) { error = 502; goto release; }
 
     /* TODO: properly create a new response and copy headers */
     s->resp = cs->resp;
@@ -86,10 +93,16 @@ release:
     http_response_free(&s->resp);
     http_request_clear(&s->req);
     uri_free(&u);
-    http_stream_close(cs);
+    if (cs) http_stream_close(cs);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
     if (error) {
-      fprintf(stderr, "ERROR, exiting\n");
+      fprintf(stderr, "ERROR: %d, exiting\n", error);
+      /* TODO: use reason string */
+      if (error >= 400) {
+        http_response_init(&s->resp, error, "Error");
+        http_response_header_append(&s->resp, "Content-Length", "0");
+        http_stream_response_send(s, 0);
+      }
       break;
     }
   }

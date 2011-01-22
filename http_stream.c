@@ -126,7 +126,7 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
     http_parser_init(&s->parser.server);
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
     fprintf(stderr, "read_request nr: %zd\n", nr);
-    if (nr <= 0) return -1;
+    if (nr <= 0) return 0;
     size_t pe = http_parser_execute(&s->parser.server, s->buf, bpos+nr, 0);
     fprintf(stderr, "pe: %zu\n", pe);
     if (http_parser_has_error(&s->parser.server)) {
@@ -167,11 +167,11 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
       printf("sending 100-continue\n");
       ssize_t nw = http_stream_response_send(s, 0);
       http_response_free(&s->resp);
-      if (nw <= 0) return -1;
+      if (nw <= 0) return 0;
     }
   }
   return (http_parser_is_finished(&s->parser.server) &&
-    !http_parser_has_error(&s->parser.server));
+    !http_parser_has_error(&s->parser.server)) ? 1: -1;
 }
 
 int http_stream_request_init(struct http_stream *s, const char *method, uri *u) {
