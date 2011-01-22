@@ -139,6 +139,46 @@ static void test_http_request_parser_unicode_escape(void) {
   g_free(data);
 }
 
+static void test_http_request_parser_percents(void) {
+  http_request req;
+  http_parser parser;
+  http_request_parser_init(&req, &parser);
+  static const char *sdata =
+  "GET http://bh.contextweb.com/bh/getuid?url=http://image2.pubmatic.com/AdServer/Pug?vcode=bz0yJnR5cGU9MSZqcz0xJmNvZGU9ODI1JnRsPTQzMjAw&piggybackCookie=%%CWGUID%%,User_tokens:%%USER_TOKENS%% HTTP/1.1\r\n"
+  "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
+  "Host: localhost:8080\r\n"
+  "Accept: */*\r\n\r\n";
+  http_parser_init(&parser);
+  char *data = g_strdup(sdata);
+  char *p = data;
+  while (!http_parser_is_finished(&parser) &&
+    !http_parser_has_error(&parser) &&
+    *p != 0)
+  {
+    p += 1; /* feed parser 1 byte at a time */
+    http_parser_execute(&parser, data, p-data, p-data-1);
+  }
+  g_assert(!http_parser_has_error(&parser));
+  g_assert(http_parser_is_finished(&parser));
+  g_assert(g_strcmp0(req.method, "GET") == 0);
+#if 0
+  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req.path, "/test/this") == 0);
+  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
+#endif
+  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req.body, NULL) == 0);
+  g_assert(req.body_length == 0);
+
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+    "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+
+  http_request_free(&req);
+  g_free(data);
+}
+
 static void test_http_request_parser_p0(void) {
   http_request req;
   http_parser parser;
@@ -616,6 +656,7 @@ int main(int argc, char *argv[]) {
   g_test_add_func("/http/request/parser/init", test_http_request_parser_init);
   g_test_add_func("/http/request/parser/normalize_header_names", test_http_request_parser_normalize_header_names);
   g_test_add_func("/http/request/parser/unicode_escape", test_http_request_parser_unicode_escape);
+  g_test_add_func("/http/request/parser/percents", test_http_request_parser_percents);
   g_test_add_func("/http/request/parser/p0", test_http_request_parser_p0);
   g_test_add_func("/http/request/parser/p1", test_http_request_parser_p1);
   g_test_add_func("/http/request/parser/p2", test_http_request_parser_p2);

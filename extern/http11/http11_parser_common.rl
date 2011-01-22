@@ -15,7 +15,8 @@
   national = any -- (alpha | digit | reserved | extra | safe | unsafe);
   unreserved = (alpha | digit | safe | extra | national);
 # add support for %uXXXX for unicode. this is a non-standard implemented in EMCA-Script escape()
-  escape = ("%" xdigit xdigit) | ("%u" xdigit xdigit xdigit xdigit);
+# add %% and % xdigit for some crazy broken URLs, seen both in the wild.
+  escape = "%%" | ("%" xdigit xdigit?) | ("%u" xdigit xdigit xdigit xdigit);
   uchar = (unreserved | escape);
   pchar = (uchar | ":" | "@" | "&" | "=" | "+");
   tspecials = ("(" | ")" | "<" | ">" | "@" | "," | ";" | ":" | "\\" | "\"" | "/" | "[" | "]" | "?" | "=" | "{" | "}" | " " | "\t");
