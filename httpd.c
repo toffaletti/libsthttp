@@ -15,7 +15,7 @@ void *handle_connection(void *arg) {
   char buf[4*1024];
   for (;;) {
     if (http_stream_request_read(s, client_nfd) < 0) break;
-    http_request_debug_print(&s->req);
+    http_request_debug_print(&s->req, stderr);
     size_t total = 0;
     for (;;) {
       ssize_t nr = http_stream_read(s, buf, sizeof(buf));

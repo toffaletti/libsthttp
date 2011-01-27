@@ -43,7 +43,7 @@ extern unsigned long long http_header_getull(GQueue *headers,
 extern void http_request_init(http_request *req);
 extern void http_request_parser_init(http_request *req, http_parser *p);
 extern void http_request_clear(http_request *req);
-extern void http_request_debug_print(http_request *req);
+extern void http_request_debug_print(http_request *req, FILE *f);
 extern void http_request_fwrite(http_request *req, FILE *f);
 extern GString *http_request_data(http_request *req);
 

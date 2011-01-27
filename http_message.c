@@ -190,29 +190,23 @@ void http_request_make(http_request *req,
   req->http_version = g_string_chunk_insert(req->chunk, "HTTP/1.1");
 }
 
-static void http_request_print_headers(gpointer data, gpointer user_data) {
-  (void)user_data;
-  message_header *hdr = (message_header *)data;
-  printf(" %s : %s\n", hdr->name, hdr->value);
-}
-
-void http_request_debug_print(http_request *req) {
-  printf("method: %s\n", req->method);
-  printf("uri: %s\n", req->uri);
-  printf("fragment: %s\n", req->fragment);
-  printf("path: %s\n", req->path);
-  printf("query: %s\n", req->query_string);
-  printf("http version: %s\n", req->http_version);
-  printf("headers:\n");
-  g_queue_foreach(req->headers, http_request_print_headers, NULL);
-  printf("length: %zu\n", req->body_length);
-  printf("body: %s\n", req->body);
-}
-
 static void http_request_write_headers(gpointer data, gpointer user_data) {
   FILE *f = (FILE *)user_data;
   message_header *hdr = (message_header *)data;
   fprintf(f, "%s: %s\r\n", hdr->name, hdr->value);
+}
+
+void http_request_debug_print(http_request *req, FILE *f) {
+  fprintf(f, "method: %s\n", req->method);
+  fprintf(f, "uri: %s\n", req->uri);
+  fprintf(f, "fragment: %s\n", req->fragment);
+  fprintf(f, "path: %s\n", req->path);
+  fprintf(f, "query: %s\n", req->query_string);
+  fprintf(f, "http version: %s\n", req->http_version);
+  fprintf(f, "headers:\n");
+  g_queue_foreach(req->headers, http_request_write_headers, f);
+  fprintf(f, "length: %zu\n", req->body_length);
+  fprintf(f, "body: %s\n", req->body);
 }
 
 void http_request_fwrite(http_request *req, FILE *f) {

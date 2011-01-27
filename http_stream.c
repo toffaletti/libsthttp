@@ -39,7 +39,6 @@ int http_stream_connect(struct http_stream *s, const char *address, uint16_t por
   {
     char addr_buf[46] = "??";
     inet_ntop(host->h_addrtype, *p, addr_buf, sizeof(addr_buf));
-    fprintf(stderr, "%-32s\t%s\n", host->h_name, addr_buf);
 
     int sock;
 
@@ -66,7 +65,7 @@ int http_stream_connect(struct http_stream *s, const char *address, uint16_t por
     }
 
     s->nfd = rmt_nfd;
-    fprintf(stderr, "connected\n");
+    /* connected */
     rvalue = 1;
     break;
   }
@@ -101,7 +100,6 @@ ssize_t http_stream_send_chunk_end(struct http_stream *s) {
 ssize_t http_stream_request_send(struct http_stream *s) {
   //http_request_fwrite(&s->req, stderr);
   GString *req_data = http_request_data(&s->req);
-  //fprintf(stderr, "REQ: %s\n", req_data->str);
   ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
   g_string_free(req_data, TRUE);
   return nw;
@@ -125,10 +123,8 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
   do {
     http_parser_init(&s->parser.server);
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
-    fprintf(stderr, "read_request nr: %zd\n", nr);
     if (nr <= 0) return 0;
     size_t pe = http_parser_execute(&s->parser.server, s->buf, bpos+nr, 0);
-    fprintf(stderr, "pe: %zu\n", pe);
     if (http_parser_has_error(&s->parser.server)) {
       fprintf(stderr, "http_stream_request_read parser error\n");
       break;
@@ -140,7 +136,6 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
         s->buf = g_realloc(s->buf, s->blen);
       }
       bpos += nr;
-      fprintf(stderr, "bpos: %zu\n", bpos);
       http_request_clear(&s->req);
     }
   } while (!http_parser_is_finished(&s->parser.server));
@@ -158,13 +153,11 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
       /* pretty sure client *must* send content length if there is any */
       s->content_size = 0;
     }
-    fprintf(stderr, "transfer_encoding: %s\n", transfer_encoding);
     s->start = s->req.body;
     s->end = s->req.body + s->req.body_length;
 
     if (http_request_header_getstr(&s->req, "Expect")) {
       http_response_init(&s->resp, 100, "Continue");
-      printf("sending 100-continue\n");
       ssize_t nw = http_stream_response_send(s, 0);
       http_response_free(&s->resp);
       if (nw <= 0) return 0;
@@ -176,7 +169,6 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
 
 int http_stream_request_init(struct http_stream *s, const char *method, uri *u) {
   char *request_uri = uri_compose_partial(u);
-  fprintf(stderr, "request URI: %s\n", request_uri);
   http_request_make(&s->req, method, request_uri);
   free(request_uri);
   http_request_header_append(&s->req, "Host", u->host);
@@ -195,9 +187,9 @@ int http_stream_response_read(struct http_stream *s) {
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
     if (nr <= 0) break;
     size_t pe = httpclient_parser_execute(&s->parser.client, s->buf, bpos+nr, 0);
-    fprintf(stderr, "pe: %zu\n", pe);
     if (httpclient_parser_has_error(&s->parser.client)) {
       fprintf(stderr, "parser error");
+      /* parser error */
       break;
     }
     if (!httpclient_parser_is_finished(&s->parser.client)) {
@@ -207,7 +199,6 @@ int http_stream_response_read(struct http_stream *s) {
         s->buf = g_realloc(s->buf, s->blen);
       }
       bpos += nr;
-      fprintf(stderr, "bpos: %zu\n", bpos);
       http_response_clear(&s->resp);
     }
   } while (!httpclient_parser_is_finished(&s->parser.client));
@@ -220,29 +211,24 @@ int http_stream_response_read(struct http_stream *s) {
     }
     const gchar *content_length = http_response_header_getstr(&s->resp, "Content-Length");
     if (content_length) { s->content_size = strtoull(content_length, NULL, 0); }
-    fprintf(stderr, "transfer_encoding: %s\n", transfer_encoding);
     s->start = s->resp.body;
     s->end = s->resp.body + s->resp.body_length;
   }
-
-  //GString *resp_data = http_response_data(&s->resp);
-  //fprintf(stderr, "resp: %s\n", resp_data->str);
-  //g_string_free(resp_data, TRUE);
 
   return (httpclient_parser_is_finished(&s->parser.client) &&
     !httpclient_parser_has_error(&s->parser.client));
 }
 
 static ssize_t _http_stream_read_chunked(struct http_stream *s, void *ptr, size_t size) {
-  fprintf(stderr, "start: %p end: %p len: %zd\n", s->start, s->end, s->end - s->start);
-  fprintf(stderr, "chunk_read: %zu/%zu\n", s->chunk_read, s->resp.chunk_size);
+  //fprintf(stderr, "start: %p end: %p len: %zd\n", s->start, s->end, s->end - s->start);
+  //fprintf(stderr, "chunk_read: %zu/%zu\n", s->chunk_read, s->resp.chunk_size);
   if (s->start == s->end) {
     size_t nr = st_read(s->nfd, s->buf, s->blen, s->timeout);
     s->start = s->buf;
     s->end = s->buf + nr;
   }
   if (s->chunk_read > 0 && s->chunk_read == s->resp.chunk_size) {
-    fprintf(stderr, "CHUNK DONE\n");
+    /* chunk done */
     s->chunk_read = 0;
     if (s->start+2 >= s->end) {
       size_t skip = 2 - (s->end - s->start); // skip crlf
@@ -259,12 +245,14 @@ static ssize_t _http_stream_read_chunked(struct http_stream *s, void *ptr, size_
     http_response_clear(&s->resp);
     httpclient_parser_init(&s->parser.client);
     httpclient_parser_execute(&s->parser.client, s->start, s->end - s->start, 0);
+    /*
     fprintf(stderr, "\n=====\n");
     fprintf(stderr, "nread: %zu\n", s->parser.client.nread);
     fprintf(stderr, "chunk_size: %zu\n", s->resp.chunk_size);
     fprintf(stderr, "last_chunk: %d\n", s->resp.last_chunk);
     fprintf(stderr, "error?: %d\n", httpclient_parser_has_error(&s->parser.client));
     fprintf(stderr, "finished?: %d\n", httpclient_parser_is_finished(&s->parser.client));
+    */
     if (s->resp.last_chunk) { return 0; }
     if (httpclient_parser_has_error(&s->parser.client)) { return -1; }
     s->start += s->parser.client.nread-1;
@@ -284,7 +272,6 @@ static ssize_t _http_stream_read_chunked(struct http_stream *s, void *ptr, size_
 
 static ssize_t _http_stream_read_server(struct http_stream *s, void *ptr, size_t size) {
   if (http_parser_has_error(&s->parser.server)) { return -1; }
-  fprintf(stderr, "req body: %p\n", s->req.body);
 
   if (s->content_size >= 0 && (size_t)s->content_size == s->total_read) { return 0; }
   if (s->total_read == 0 && s->req.body) {
@@ -301,7 +288,7 @@ static ssize_t _http_stream_read_server(struct http_stream *s, void *ptr, size_t
   }
   ssize_t nr = st_read(s->nfd, ptr, size, s->timeout);
   s->total_read += nr;
-  fprintf(stderr, "read %zu bytes, %zu/%zu\n", nr, s->total_read, s->content_size);
+  //fprintf(stderr, "read %zu bytes, %zu/%zu\n", nr, s->total_read, s->content_size);
   return nr;
 }
 
@@ -328,7 +315,7 @@ static ssize_t _http_stream_read_client(struct http_stream *s, void *ptr, size_t
     }
     ssize_t nr = st_read(s->nfd, ptr, size, s->timeout);
     s->total_read += nr;
-    fprintf(stderr, "read %zu bytes, %zu/%zu\n", nr, s->total_read, s->content_size);
+    //fprintf(stderr, "read %zu bytes, %zu/%zu\n", nr, s->total_read, s->content_size);
     return nr;
   }
 
