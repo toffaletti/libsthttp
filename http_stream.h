@@ -63,7 +63,7 @@ extern int http_stream_request_init(struct http_stream *s, const char *method, u
 extern int http_stream_response_read(struct http_stream *s);
 extern int http_stream_request_read(struct http_stream *s, st_netfd_t nfd);
 extern int http_stream_response_send(struct http_stream *s, int body);
-extern int http_stream_read(struct http_stream *s, void *ptr, size_t size);
+extern int http_stream_read(struct http_stream *s, void *ptr, ssize_t *size);
 extern int http_stream_send_chunk(struct http_stream *s, const char *buf, size_t size);
 extern int http_stream_send_chunk_end(struct http_stream *s);
 extern void http_stream_close(struct http_stream *s);

@@ -21,8 +21,10 @@ void *handle_connection(void *arg) {
     cs = NULL;
     error = 0;
     int status = http_stream_request_read(s, client_nfd);
-    if (status < 0) { error = 400; goto release; }
-    if (status == 0) { error = 1; goto release; }
+    if (status != HTTP_STREAM_OK) {
+      if (s->status == HTTP_STREAM_CLOSED) { error = 1; } else { error = 400; }
+      goto release;
+    }
     cs = http_stream_create(HTTP_CLIENT, SEC2USEC(30));
     //http_request_debug_print(&s->req);
 
@@ -35,21 +37,22 @@ void *handle_connection(void *arg) {
       goto release;
     }
     uri_normalize(&u);
-    if (!http_stream_connect(cs, u.host, u.port)) { error = 504; goto release; }
+    if (http_stream_connect(cs, u.host, u.port) != HTTP_STREAM_OK) { error = 504; goto release; }
     http_request_header_remove(&s->req, "Accept-Encoding");
     http_request_header_remove(&s->req, "Proxy-Connection");
     cs->req = s->req;
     char *request_uri = uri_compose_partial(&u);
     cs->req.uri = request_uri;
-    if (!http_stream_request_send(cs)) { error = 504; goto release; }
+    if (http_stream_request_send(cs) != HTTP_STREAM_OK) { error = 504; goto release; }
     memset(&cs->req, 0, sizeof(http_request));
     free(request_uri);
 
     size_t total = 0;
     for (;;) {
-      ssize_t nr = http_stream_read(s, buf, sizeof(buf));
+      ssize_t nr = sizeof(buf);
+      status = http_stream_read(s, buf, &nr);
       fprintf(stderr, "http_stream_read nr: %zd\n", nr);
-      if (nr <= 0) break;
+      if (nr <= 0 || status != HTTP_STREAM_OK) break;
       /*fwrite(buf, sizeof(char), nr, stdout);*/
       ssize_t nw = st_write(cs->nfd, buf, nr, s->timeout);
       if (nw != nr) { error=1; goto release; }
@@ -58,7 +61,7 @@ void *handle_connection(void *arg) {
     }
     fprintf(stderr, "http_stream_read total: %zu\n", total);
 
-    if (!http_stream_response_read(cs)) { error = 502; goto release; }
+    if (http_stream_response_read(cs) != HTTP_STREAM_OK) { error = 502; goto release; }
 
     /* TODO: properly create a new response and copy headers */
     s->resp = cs->resp;
@@ -70,17 +73,18 @@ void *handle_connection(void *arg) {
     ssize_t nw = http_stream_response_send(s, 0);
     memset(&s->resp, 0, sizeof(http_response));
     fprintf(stderr, "http_stream_response_send: %zd\n", nw);
-    if (s->resp.status_code != 204) {
+    if (s->resp.status_code != 204 &&
+           (cs->content_size > 0 || cs->transfer_encoding == TE_CHUNKED)) {
       total = 0;
+      fprintf(stderr, "content size: %zd\n", cs->content_size);
       for (;;) {
-        ssize_t nr = http_stream_read(cs, buf, sizeof(buf));
+        ssize_t nr = sizeof(buf);
+        status = http_stream_read(cs, buf, &nr);
         fprintf(stderr, "http_stream_read nr: %zd\n", nr);
-        if (nr <= 0) break;
+        if (nr <= 0 || status != HTTP_STREAM_OK) break;
         /*fwrite(buf, sizeof(char), nr, stdout);*/
         total += nr;
-        ssize_t nw = http_stream_send_chunk(s, buf, nr);
-        printf("chunk nr: %zd chunk nw: %zd\n", nr, nw);
-        if (nw <= 0 || nw < nr) break;
+        if (http_stream_send_chunk(s, buf, nr) != HTTP_STREAM_OK) break;
       }
       fprintf(stderr, "written to client: %zu\n", total);
       if (total > 0) {

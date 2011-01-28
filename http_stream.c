@@ -105,7 +105,7 @@ int http_stream_connect(struct http_stream *s, const char *address, uint16_t por
   }
 
 done:
-  ares_free_hostent(host);
+  if (host) ares_free_hostent(host);
   return CHECK_STATUS(s);
 }
 
@@ -255,13 +255,13 @@ int http_stream_response_read(struct http_stream *s) {
   return CHECK_STATUS(s);
 }
 
-static int _http_stream_read_chunked(struct http_stream *s, void *ptr, size_t size) {
+static int _http_stream_read_chunked(struct http_stream *s, void *ptr, ssize_t *size) {
   //fprintf(stderr, "start: %p end: %p len: %zd\n", s->start, s->end, s->end - s->start);
   //fprintf(stderr, "chunk_read: %zu/%zu\n", s->chunk_read, s->resp.chunk_size);
   if (s->start == s->end) {
     ssize_t nr = st_read(s->nfd, s->buf, s->blen, s->timeout);
     CHECK_READ(s, nr);
-    if (!STATUS_OK(s)) return HTTP_STREAM_ERROR;
+    if (!STATUS_OK(s)) { *size = 0; return HTTP_STREAM_ERROR; }
     s->start = s->buf;
     s->end = s->buf + nr;
   }
@@ -272,7 +272,7 @@ static int _http_stream_read_chunked(struct http_stream *s, void *ptr, size_t si
       size_t skip = 2 - (s->end - s->start); // skip crlf
       ssize_t nr = st_read(s->nfd, s->buf, s->blen, s->timeout);
       CHECK_READ(s, nr);
-      if (!STATUS_OK(s)) return HTTP_STREAM_ERROR;
+      if (!STATUS_OK(s)) { *size = 0; return HTTP_STREAM_ERROR; }
       s->start = s->buf+skip;
       s->end = s->buf + nr;
     } else {
@@ -293,8 +293,9 @@ static int _http_stream_read_chunked(struct http_stream *s, void *ptr, size_t si
     fprintf(stderr, "error?: %d\n", httpclient_parser_has_error(&s->parser.client));
     fprintf(stderr, "finished?: %d\n", httpclient_parser_is_finished(&s->parser.client));
     */
-    if (s->resp.last_chunk) { return CHECK_STATUS(s); }
+    if (s->resp.last_chunk) { *size = 0; return CHECK_STATUS(s); }
     if (httpclient_parser_has_error(&s->parser.client)) {
+      *size = 0;
       s->status = HTTP_STREAM_PARSE_ERROR;
       return HTTP_STREAM_ERROR;
     }
@@ -304,74 +305,89 @@ static int _http_stream_read_chunked(struct http_stream *s, void *ptr, size_t si
   if (s->start < s->end) {
     g_assert(s->end >= s->start);
     g_assert(s->resp.chunk_size >= s->chunk_read);
-    ssize_t nbytes = min(s->resp.chunk_size - s->chunk_read, min(size, (size_t)(s->end - s->start)));
+    ssize_t nbytes = min(s->resp.chunk_size - s->chunk_read, (size_t)min(*size, (s->end - s->start)));
     memcpy(ptr, s->start, nbytes);
     s->start += nbytes;
     s->chunk_read += nbytes;
+    *size = nbytes;
   }
   return CHECK_STATUS(s);
 }
 
-static int _http_stream_read_server(struct http_stream *s, void *ptr, size_t size) {
+static int _http_stream_read_server(struct http_stream *s, void *ptr, ssize_t *size) {
   if (http_parser_has_error(&s->parser.server)) {
+    *size = 0;
     s->status = HTTP_STREAM_PARSE_ERROR;
     return HTTP_STREAM_ERROR;
   }
 
-  if (s->content_size >= 0 && (size_t)s->content_size == s->total_read) { return 0; }
+  if (s->content_size >= 0 && (size_t)s->content_size == s->total_read) {
+    *size = 0;
+    return CHECK_STATUS(s);
+  }
   if (s->total_read == 0 && s->req.body) {
     s->start = s->req.body;
     s->end = s->req.body + s->req.body_length;
   }
   g_assert(s->end >= s->start);
   if (s->total_read < s->req.body_length && s->req.body_length > 0) {
-    ssize_t nbytes = min(size, (size_t)(s->end - s->start));
+    ssize_t nbytes = min(*size, (s->end - s->start));
     memcpy(ptr, s->start, nbytes);
     s->start += nbytes;
     s->total_read += nbytes;
+    *size = nbytes;
     return CHECK_STATUS(s);
   }
-  ssize_t nr = st_read(s->nfd, ptr, size, s->timeout);
+  ssize_t nr = st_read(s->nfd, ptr, *size, s->timeout);
   CHECK_READ(s, nr);
   if (nr > 0) s->total_read += nr;
+  *size = nr;
   //fprintf(stderr, "read %zu bytes, %zu/%zu\n", nr, s->total_read, s->content_size);
   return CHECK_STATUS(s);
 }
 
-static int _http_stream_read_client(struct http_stream *s, void *ptr, size_t size) {
+static int _http_stream_read_client(struct http_stream *s, void *ptr, ssize_t *size) {
   if (httpclient_parser_has_error(&s->parser.client)) {
+    *size = 0;
     s->status = HTTP_STREAM_PARSE_ERROR;
     return HTTP_STREAM_ERROR;
   }
   /* status 204 means no body */
-  if (s->resp.status_code == 204) { return CHECK_STATUS(s); }
+  if (s->resp.status_code == 204) {
+    *size = 0;
+    return CHECK_STATUS(s);
+  }
 
   if (s->transfer_encoding == TE_CHUNKED) {
     return _http_stream_read_chunked(s, ptr, size);
   } else {
-    if (s->content_size >= 0 && (size_t)s->content_size == s->total_read) { return CHECK_STATUS(s); }
+    if (s->content_size >= 0 && (size_t)s->content_size == s->total_read) {
+      *size = 0;
+      return CHECK_STATUS(s);
+    }
     if (s->total_read == 0 && s->resp.body) {
       s->start = s->resp.body;
       s->end = s->resp.body + s->resp.body_length;
     }
     if (s->total_read < s->resp.body_length) {
       g_assert(s->end >= s->start);
-      ssize_t rvalue = min(size, (size_t)(s->end - s->start));
-      memcpy(ptr, s->start, rvalue);
-      s->start += rvalue;
-      s->total_read += rvalue;
-      return rvalue;
+      ssize_t nbytes = min(*size, (s->end - s->start));
+      memcpy(ptr, s->start, nbytes);
+      s->start += nbytes;
+      s->total_read += nbytes;
+      *size = nbytes;
+      return CHECK_STATUS(s);
     }
-    ssize_t nr = st_read(s->nfd, ptr, size, s->timeout);
-    s->total_read += nr;
+    ssize_t nr = st_read(s->nfd, ptr, *size, s->timeout);
+    CHECK_READ(s, nr);
+    if (nr > 0) s->total_read += nr;
+    *size = nr;
     //fprintf(stderr, "read %zu bytes, %zu/%zu\n", nr, s->total_read, s->content_size);
-    return nr;
   }
-
-  return -1;
+  return CHECK_STATUS(s);
 }
 
-ssize_t http_stream_read(struct http_stream *s, void *ptr, size_t size) {
+int http_stream_read(struct http_stream *s, void *ptr, ssize_t *size) {
   switch (s->mode) {
   case HTTP_CLIENT:
     return _http_stream_read_client(s, ptr, size);
