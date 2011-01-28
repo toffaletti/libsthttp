@@ -15,6 +15,20 @@ enum {
     HTTP_SERVER
 };
 
+/* stream status codes */
+enum {
+    HTTP_STREAM_OK = 0,
+    HTTP_STREAM_DNS_ERROR,
+    HTTP_STREAM_SOCKET_ERROR,
+    HTTP_STREAM_CONNECT_ERROR,
+    HTTP_STREAM_WRITE_ERROR,
+    HTTP_STREAM_READ_ERROR,
+    HTTP_STREAM_PARSE_ERROR,
+    HTTP_STREAM_CLOSED, /* read returned 0 */
+    HTTP_STREAM_TIMEOUT,
+    HTTP_STREAM_ERROR = -1
+};
+
 struct http_stream {
   const gchar *start;
   const gchar *end;
@@ -31,6 +45,7 @@ struct http_stream {
   st_utime_t timeout;
   int transfer_encoding;
   int mode;
+  int status;
 
   union {
     http_parser server;
@@ -43,12 +58,12 @@ struct http_stream {
 
 extern struct http_stream *http_stream_create(int mode, st_utime_t timeout);
 extern int http_stream_connect(struct http_stream *s, const char *address, uint16_t port);
-extern ssize_t http_stream_request_send(struct http_stream *s);
+extern int http_stream_request_send(struct http_stream *s);
 extern int http_stream_request_init(struct http_stream *s, const char *method, uri *u);
 extern int http_stream_response_read(struct http_stream *s);
 extern int http_stream_request_read(struct http_stream *s, st_netfd_t nfd);
-extern ssize_t http_stream_response_send(struct http_stream *s, int body);
-extern ssize_t http_stream_read(struct http_stream *s, void *ptr, size_t size);
-extern ssize_t http_stream_send_chunk(struct http_stream *s, const char *buf, size_t size);
-extern ssize_t http_stream_send_chunk_end(struct http_stream *s);
+extern int http_stream_response_send(struct http_stream *s, int body);
+extern int http_stream_read(struct http_stream *s, void *ptr, size_t size);
+extern int http_stream_send_chunk(struct http_stream *s, const char *buf, size_t size);
+extern int http_stream_send_chunk_end(struct http_stream *s);
 extern void http_stream_close(struct http_stream *s);
