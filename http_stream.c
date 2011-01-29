@@ -110,6 +110,7 @@ done:
 }
 
 int http_stream_send_chunk(struct http_stream *s, const char *buf, size_t size) {
+  g_assert(s->status == HTTP_STREAM_OK);
   const char endbuf[] = "\r\n";
   char lenbuf[64];
   struct iovec vec[3];
@@ -128,12 +129,14 @@ int http_stream_send_chunk(struct http_stream *s, const char *buf, size_t size) 
 }
 
 int http_stream_send_chunk_end(struct http_stream *s) {
+  g_assert(s->status == HTTP_STREAM_OK);
   ssize_t nw = st_write(s->nfd, "0\r\n\r\n", 5, s->timeout);
   CHECK_WRITE(s, nw);
   return CHECK_STATUS(s);
 }
 
 int http_stream_request_send(struct http_stream *s) {
+  g_assert(s->status == HTTP_STREAM_OK);
   //http_request_fwrite(&s->req, stderr);
   GString *req_data = http_request_data(&s->req);
   ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
@@ -143,6 +146,7 @@ int http_stream_request_send(struct http_stream *s) {
 }
 
 int http_stream_response_send(struct http_stream *s, int body) {
+  g_assert(s->status == HTTP_STREAM_OK);
   GString *req_data = http_response_data(&s->resp);
   ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
   g_string_free(req_data, TRUE);
@@ -155,6 +159,7 @@ int http_stream_response_send(struct http_stream *s, int body) {
 }
 
 int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
+  g_assert(s->status == HTTP_STREAM_OK);
   g_assert(s->mode == HTTP_SERVER);
   s->nfd = nfd;
   size_t bpos = 0;
@@ -206,6 +211,7 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
 }
 
 int http_stream_request_init(struct http_stream *s, const char *method, uri *u) {
+  g_assert(s->status == HTTP_STREAM_OK);
   char *request_uri = uri_compose_partial(u);
   http_request_make(&s->req, method, request_uri);
   free(request_uri);
@@ -217,6 +223,7 @@ int http_stream_request_init(struct http_stream *s, const char *method, uri *u) 
 }
 
 int http_stream_response_read(struct http_stream *s) {
+  g_assert(s->status == HTTP_STREAM_OK);
   g_assert(s->mode == HTTP_CLIENT);
 
   size_t bpos = 0;
@@ -388,6 +395,7 @@ static int _http_stream_read_client(struct http_stream *s, void *ptr, ssize_t *s
 }
 
 int http_stream_read(struct http_stream *s, void *ptr, ssize_t *size) {
+  g_assert(s->status == HTTP_STREAM_OK);
   switch (s->mode) {
   case HTTP_CLIENT:
     return _http_stream_read_client(s, ptr, size);

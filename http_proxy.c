@@ -17,12 +17,17 @@ void *handle_connection(void *arg) {
   struct http_stream *cs = NULL;
   uri u;
   for (;;) {
+    if (s->status != HTTP_STREAM_OK) break;
     memset(&u, 0, sizeof(u));
     cs = NULL;
     error = 0;
     int status = http_stream_request_read(s, client_nfd);
     if (status != HTTP_STREAM_OK) {
-      if (s->status == HTTP_STREAM_CLOSED) { error = 1; } else { error = 400; }
+      if (s->status == HTTP_STREAM_CLOSED || s->status == HTTP_STREAM_TIMEOUT) {
+        error = 1;
+      } else {
+        error = 400;
+      }
       goto release;
     }
     cs = http_stream_create(HTTP_CLIENT, SEC2USEC(30));
@@ -51,7 +56,7 @@ void *handle_connection(void *arg) {
     for (;;) {
       ssize_t nr = sizeof(buf);
       status = http_stream_read(s, buf, &nr);
-      fprintf(stderr, "http_stream_read nr: %zd\n", nr);
+      fprintf(stderr, "server http_stream_read nr: %zd\n", nr);
       if (nr <= 0 || status != HTTP_STREAM_OK) break;
       /*fwrite(buf, sizeof(char), nr, stdout);*/
       ssize_t nw = st_write(cs->nfd, buf, nr, s->timeout);
@@ -80,17 +85,17 @@ void *handle_connection(void *arg) {
       for (;;) {
         ssize_t nr = sizeof(buf);
         status = http_stream_read(cs, buf, &nr);
-        fprintf(stderr, "http_stream_read nr: %zd\n", nr);
+        fprintf(stderr, "client http_stream_read nr: %zd\n", nr);
         if (nr <= 0 || status != HTTP_STREAM_OK) break;
         /*fwrite(buf, sizeof(char), nr, stdout);*/
         total += nr;
         if (http_stream_send_chunk(s, buf, nr) != HTTP_STREAM_OK) break;
       }
       fprintf(stderr, "written to client: %zu\n", total);
-      if (total > 0) {
+      if (total > 0 && s->status == HTTP_STREAM_OK) {
         http_stream_send_chunk_end(s);
       } else {
-        fprintf(stderr, "for request: %s\n", s->req.uri);
+        fprintf(stderr, "for request: %s status: %d\n", s->req.uri, s->status);
       }
     }
 release:
@@ -100,11 +105,12 @@ release:
     if (cs) http_stream_close(cs);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
     if (error) {
-      fprintf(stderr, "ERROR: %d, exiting\n", error);
+      fprintf(stderr, "ERROR: %d STATUS: %d, exiting\n", error, s->status);
       /* TODO: use reason string */
-      if (error >= 400) {
+      if (error >= 400 && s->status != HTTP_STREAM_CLOSED) {
         http_response_init(&s->resp, error, "Error");
         http_response_header_append(&s->resp, "Content-Length", "0");
+        s->status = HTTP_STREAM_OK; /* TODO: might want to move this logic into http_stream */
         http_stream_response_send(s, 0);
       }
       break;
