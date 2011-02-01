@@ -4,19 +4,19 @@
 #include "http_message.h"
 
 /* transfer encoding */
-enum {
+enum transfer_encoding_e {
     TE_NONE = 0,
     TE_CHUNKED
 };
 
 /* stream mode */
-enum {
+enum http_stream_mode_e {
     HTTP_CLIENT,
     HTTP_SERVER
 };
 
 /* stream status codes */
-enum {
+enum http_stream_status_e {
     HTTP_STREAM_OK = 0,
     HTTP_STREAM_DNS_ERROR,
     HTTP_STREAM_SOCKET_ERROR,
@@ -43,9 +43,9 @@ struct http_stream {
   size_t chunk_read;
 
   st_utime_t timeout;
-  int transfer_encoding;
-  int mode;
-  int status;
+  enum transfer_encoding_e transfer_encoding;
+  enum http_stream_mode_e mode;
+  enum http_stream_status_e status;
 
   union {
     http_parser server;
