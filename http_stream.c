@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <glib.h>
 
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define max(a, b) ((a) > (b) ? (a) : (b))
@@ -35,8 +36,9 @@ TODO: http_stream_read and family needs to return number of bytes read
  so it can be called continuously until it is done */
 
 struct http_stream *http_stream_create(int mode, st_utime_t timeout) {
-  struct http_stream *s = (struct http_stream *)calloc(1, sizeof(struct http_stream));
+  struct http_stream *s = g_slice_new0(struct http_stream);
   if (s) {
+    s->req = http_request_new();
     s->nfd = NULL;
     s->blen = 8 * 1024;
     s->buf = g_malloc(s->blen);
@@ -46,7 +48,7 @@ struct http_stream *http_stream_create(int mode, st_utime_t timeout) {
     if (s->mode == HTTP_CLIENT) {
       http_response_parser_init(&s->resp, &s->parser.client);
     } else {
-      http_request_parser_init(&s->req, &s->parser.server);
+      http_request_parser_init(s->req, &s->parser.server);
     }
   }
   return s;
@@ -137,8 +139,8 @@ int http_stream_send_chunk_end(struct http_stream *s) {
 
 int http_stream_request_send(struct http_stream *s) {
   g_assert(s->status == HTTP_STREAM_OK);
-  //http_request_fwrite(&s->req, stderr);
-  GString *req_data = http_request_data(&s->req);
+  //http_request_fwrite(s->req, stderr);
+  GString *req_data = http_request_data(s->req);
   ssize_t nw = st_write(s->nfd, req_data->str, req_data->len, s->timeout);
   g_string_free(req_data, TRUE);
   CHECK_WRITE(s, nw);
@@ -163,7 +165,7 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
   g_assert(s->mode == HTTP_SERVER);
   s->nfd = nfd;
   size_t bpos = 0;
-  http_request_clear(&s->req);
+  http_request_clear(s->req);
   do {
     http_parser_init(&s->parser.server);
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
@@ -181,27 +183,27 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
         s->buf = g_realloc(s->buf, s->blen);
       }
       bpos += nr;
-      http_request_clear(&s->req);
+      http_request_clear(s->req);
     }
   } while (!http_parser_is_finished(&s->parser.server));
 
   if (http_parser_is_finished(&s->parser.server) && !http_parser_has_error(&s->parser.server)) {
     // TODO: probably use enum for transfer encoding
-    const gchar *transfer_encoding = http_response_header_getstr(&s->req, "Transfer-Encoding");
+    const gchar *transfer_encoding = http_request_header_getstr(s->req, "Transfer-Encoding");
     if (g_strcmp0(transfer_encoding, "chunked") == 0) {
       s->transfer_encoding = TE_CHUNKED;
     }
-    const gchar *content_length = http_response_header_getstr(&s->req, "Content-Length");
+    const gchar *content_length = http_request_header_getstr(s->req, "Content-Length");
     if (content_length) {
       s->content_size = strtoull(content_length, NULL, 0);
     } else {
       /* pretty sure client *must* send content length if there is any */
       s->content_size = 0;
     }
-    s->start = s->req.body;
-    s->end = s->req.body + s->req.body_length;
+    s->start = s->req->body;
+    s->end = s->req->body + s->req->body_length;
 
-    if (http_request_header_getstr(&s->req, "Expect")) {
+    if (http_request_header_getstr(s->req, "Expect")) {
       http_response_init(&s->resp, 100, "Continue");
       http_stream_response_send(s, 0);
       http_response_free(&s->resp);
@@ -213,11 +215,11 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
 int http_stream_request_init(struct http_stream *s, const char *method, uri *u) {
   g_assert(s->status == HTTP_STREAM_OK);
   char *request_uri = uri_compose_partial(u);
-  http_request_make(&s->req, method, request_uri);
+  http_request_make(s->req, method, request_uri);
   free(request_uri);
-  http_request_header_append(&s->req, "Host", u->host);
+  http_request_header_append(s->req, "Host", u->host);
   /* TODO: bogus UA */
-  http_request_header_append(&s->req, "User-Agent", "Mozilla/5.0 (X11; U; Linux x86_64; en-US) AppleWebKit/534.10 (KHTML, like Gecko) Ubuntu/10.10 Chromium/8.0.552.224 Chrome/8.0.552.224 Safari/534.10");
+  http_request_header_append(s->req, "User-Agent", "Mozilla/5.0 (X11; U; Linux x86_64; en-US) AppleWebKit/534.10 (KHTML, like Gecko) Ubuntu/10.10 Chromium/8.0.552.224 Chrome/8.0.552.224 Safari/534.10");
   /* TODO: check results, handle errors */
   return CHECK_STATUS(s);
 }
@@ -332,12 +334,12 @@ static int _http_stream_read_server(struct http_stream *s, void *ptr, ssize_t *s
     *size = 0;
     return CHECK_STATUS(s);
   }
-  if (s->total_read == 0 && s->req.body) {
-    s->start = s->req.body;
-    s->end = s->req.body + s->req.body_length;
+  if (s->total_read == 0 && s->req->body) {
+    s->start = s->req->body;
+    s->end = s->req->body + s->req->body_length;
   }
   g_assert(s->end >= s->start);
-  if (s->total_read < s->req.body_length && s->req.body_length > 0) {
+  if (s->total_read < s->req->body_length && s->req->body_length > 0) {
     ssize_t nbytes = min(*size, (s->end - s->start));
     memcpy(ptr, s->start, nbytes);
     s->start += nbytes;
@@ -409,8 +411,8 @@ void http_stream_close(struct http_stream *s) {
   g_assert(s->buf);
   g_free(s->buf);
   http_response_free(&s->resp);
-  http_request_free(&s->req);
+  http_request_free(s->req);
   if (s->nfd) { st_netfd_close(s->nfd); }
   memset(s, 0, sizeof(struct http_stream));
-  free(s);
+  g_slice_free(struct http_stream, s);
 }

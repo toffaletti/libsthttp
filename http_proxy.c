@@ -31,30 +31,34 @@ void *handle_connection(void *arg) {
       goto release;
     }
     cs = http_stream_create(HTTP_CLIENT, SEC2USEC(30));
-    //http_request_debug_print(&s->req);
+    //http_request_debug_print(s->req);
 
-    fprintf(stderr, "request uri: %s\n", s->req.uri);
+    fprintf(stderr, "request uri: %s\n", s->req->uri);
     const char *error_at = NULL;
     uri_init(&u);
-    if (uri_parse(&u, s->req.uri, strlen(s->req.uri), &error_at) == 0) {
+    if (uri_parse(&u, s->req->uri, strlen(s->req->uri), &error_at) == 0) {
       fprintf(stderr, "uri_parse error: %s\n", error_at);
       error = 400;
       goto release;
     }
     uri_normalize(&u);
     if (http_stream_connect(cs, u.host, u.port) != HTTP_STREAM_OK) { error = 504; goto release; }
-    http_request_header_remove(&s->req, "Accept-Encoding");
-    http_request_header_remove(&s->req, "Proxy-Connection");
+    http_request_header_remove(s->req, "Accept-Encoding");
+    http_request_header_remove(s->req, "Proxy-Connection");
+    /* TODO: need to expose a copy api for http message */
+    http_request_t *tmp_req = cs->req;
     cs->req = s->req;
     char *request_uri = uri_compose_partial(&u);
-    cs->req.uri = request_uri;
+    char *tmp_uri = s->req->uri;
+    cs->req->uri = request_uri;
     if (http_stream_request_send(cs) != HTTP_STREAM_OK) { error = 504; goto release; }
-    memset(&cs->req, 0, sizeof(http_request));
+    cs->req = tmp_req;
+    s->req->uri = tmp_uri;
     free(request_uri);
 
     /* TODO: fix this. post might not contain data. probably move this logic into stream */
     size_t total = 0;
-    if (g_strcmp0("POST", s->req.method) == 0) {
+    if (g_strcmp0("POST", s->req->method) == 0) {
       for (;;) {
         ssize_t nr = sizeof(buf);
         status = http_stream_read(s, buf, &nr);
@@ -98,12 +102,12 @@ void *handle_connection(void *arg) {
       if (total > 0 && s->status == HTTP_STREAM_OK) {
         http_stream_send_chunk_end(s);
       } else {
-        fprintf(stderr, "for request: %s status: %d\n", s->req.uri, s->status);
+        fprintf(stderr, "for request: %s status: %d\n", s->req->uri, s->status);
       }
     }
 release:
     http_response_free(&s->resp);
-    http_request_clear(&s->req);
+    http_request_clear(s->req);
     uri_free(&u);
     if (cs) http_stream_close(cs);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
