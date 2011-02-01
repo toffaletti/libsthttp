@@ -8,7 +8,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/uri)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/extern)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/extern/st-1.9)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/extern/c-ares-1.7.3)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/extern/c-ares-1.7.4)
 include_directories(/usr/include/glib-2.0/ /usr/lib/glib-2.0/include/)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -std=gnu99 -g3 -ggdb -Wall -Wextra -pedantic")
