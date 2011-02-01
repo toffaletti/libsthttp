@@ -3,7 +3,7 @@
 #include "http11/http11_parser.h"
 #include "http11_client/http11_parser.h"
 
-typedef struct http_request {
+struct http_request_s {
   GStringChunk *chunk; /* string pool */
   GQueue *headers;
   gchar *method;
@@ -14,7 +14,8 @@ typedef struct http_request {
   gchar *http_version;
   const gchar *body;
   size_t body_length;
-} http_request;
+};
+typedef struct http_request_s http_request_t;
 
 typedef struct http_response {
   GStringChunk *chunk; /* string pool */
@@ -38,36 +39,37 @@ extern const gchar *http_header_getstr(GQueue *headers,
 extern unsigned long long http_header_getull(GQueue *headers,
   const gchar *field);
 
-/* http_request */
+/* http_request_t */
 
-extern void http_request_init(http_request *req);
-extern void http_request_parser_init(http_request *req, http_parser *p);
-extern void http_request_clear(http_request *req);
-extern void http_request_debug_print(http_request *req, FILE *f);
-extern void http_request_fwrite(http_request *req, FILE *f);
-extern GString *http_request_data(http_request *req);
+extern http_request_t *http_request_new(void);
+/* extern void http_request_init(http_request_t *req); */
+extern void http_request_parser_init(http_request_t *req, http_parser *p);
+extern void http_request_clear(http_request_t *req);
+extern void http_request_debug_print(http_request_t *req, FILE *f);
+extern void http_request_fwrite(http_request_t *req, FILE *f);
+extern GString *http_request_data(http_request_t *req);
 
 #define http_request_header_append(req, field, value) \
   http_header_append( \
-    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request, headers)), \
-    G_STRUCT_MEMBER(GStringChunk *, req, G_STRUCT_OFFSET(http_request, chunk)), \
+    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request_t, headers)), \
+    G_STRUCT_MEMBER(GStringChunk *, req, G_STRUCT_OFFSET(http_request_t, chunk)), \
     field, value)
 
 #define http_request_header_remove(req, field) \
   http_header_remove( \
-    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request, headers)), field)
+    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request_t, headers)), field)
 
 #define http_request_header_getstr(req, field) \
   http_header_getstr( \
-    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request, headers)), field)
+    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request_t, headers)), field)
 
 #define http_request_header_getull(req, field) \
   http_header_getull( \
-    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request, headers)), field)
+    G_STRUCT_MEMBER(GQueue *, req, G_STRUCT_OFFSET(http_request_t, headers)), field)
 
-extern void http_request_make(http_request *req,
+extern void http_request_make(http_request_t *req,
   const gchar *method, const gchar *uri);
-extern void http_request_free(http_request *req);
+extern void http_request_free(http_request_t *req);
 
 /* http_response */
 

@@ -2,10 +2,11 @@
 #include <string.h>
 #include <stdlib.h>
 
-typedef struct message_header {
+struct message_header_s {
   gchar *name;
   gchar *value;
-} message_header;
+};
+typedef struct message_header_s message_header_t;
 
 /* TODO 
  * - add function to serialize to iovec for speedy writes
@@ -35,7 +36,7 @@ static gchar *normalize_header_name(gchar *field) {
 }
 
 static gint header_name_compare(gconstpointer a, gconstpointer b) {
-  const message_header *am = (message_header *)a;
+  const message_header_t *am = (message_header_t *)a;
   const gchar *field = (const gchar *)b;
   return g_strcmp0(field, am->name);
 }
@@ -44,7 +45,7 @@ void http_header_append(GQueue *headers,
   GStringChunk *chunk,
   const gchar *field, const gchar *value)
 {
-  message_header *hdr = g_slice_new(message_header);
+  message_header_t *hdr = g_slice_new(message_header_t);
   hdr->name = g_string_chunk_insert(chunk, field);
   normalize_header_name(hdr->name);
   hdr->value = g_string_chunk_insert(chunk, value);
@@ -57,7 +58,7 @@ gboolean http_header_remove(GQueue *headers,
   GList *l = g_queue_find_custom(headers, field, header_name_compare);
   gboolean found = FALSE;
   while (l) {
-    g_slice_free(message_header, l->data);
+    g_slice_free(message_header_t, l->data);
     g_queue_delete_link(headers, l);
     found = TRUE;
     l = g_queue_find_custom(headers, field, header_name_compare);
@@ -70,7 +71,7 @@ const gchar *http_header_getstr(GQueue *headers,
 {
   GList *l = g_queue_find_custom(headers, field, header_name_compare);
   if (l) {
-    return ((message_header *)l->data)->value;
+    return ((message_header_t *)l->data)->value;
   }
   return NULL;
 }
@@ -83,37 +84,37 @@ unsigned long long http_header_getull(GQueue *headers,
 }
 
 static void request_method(void *data, const char *at, size_t length) {
-  http_request *msg = (http_request *)data;
+  http_request_t *msg = (http_request_t *)data;
   msg->method = g_string_chunk_insert_len(msg->chunk, at, length);
 }
 
 static void request_uri(void *data, const char *at, size_t length) {
-  http_request *msg = (http_request *)data;
+  http_request_t *msg = (http_request_t *)data;
   msg->uri = g_string_chunk_insert_len(msg->chunk, at, length);
 }
 
 static void fragment(void *data, const char *at, size_t length) {
-  http_request *msg = (http_request *)data;
+  http_request_t *msg = (http_request_t *)data;
   msg->fragment = g_string_chunk_insert_len(msg->chunk, at, length);
 }
 
 static void request_path(void *data, const char *at, size_t length) {
-  http_request *msg = (http_request *)data;
+  http_request_t *msg = (http_request_t *)data;
   msg->path = g_string_chunk_insert_len(msg->chunk, at, length);
 }
 
 static void query_string(void *data, const char *at, size_t length) {
-  http_request *msg = (http_request *)data;
+  http_request_t *msg = (http_request_t *)data;
   msg->query_string = g_string_chunk_insert_len(msg->chunk, at, length);
 }
 
 static void http_version(void *data, const char *at, size_t length) {
-  http_request *req = (http_request *)data;
+  http_request_t *req = (http_request_t *)data;
   req->http_version = g_string_chunk_insert_len(req->chunk, at, length);
 }
 
 static void header_done(void *data, const char *at, size_t length) {
-  http_request *req = (http_request *)data;
+  http_request_t *req = (http_request_t *)data;
   /* set body */
   /* TODO: not sure this logic is right. length might be wrong */
   if (length) {
@@ -125,7 +126,7 @@ static void header_done(void *data, const char *at, size_t length) {
 static void http_field(void *data, const char *field,
   size_t flen, const char *value, size_t vlen)
 {
-  http_request *req = (http_request *)data;
+  http_request_t *req = (http_request_t *)data;
   /* cast away const then temporarily NULL terminate */
   gchar *f = (gchar *)field;
   gchar *v = (gchar *)value;
@@ -140,32 +141,35 @@ static void http_field(void *data, const char *field,
   v[vlen] = vvf;
 }
 
-void http_request_init(http_request *req) {
+#if 0
+void http_request_init(http_request_t *req) {
   req->chunk = g_string_chunk_new(1024 * 4);
   req->headers = NULL;
   http_request_clear(req);
   req->headers = g_queue_new();
 }
+#endif
 
-void http_request_parser_init(http_request *req, http_parser *p) {
-  http_request_init(req);
-  p->data = req;
-  p->http_field = http_field;
-  p->request_method = request_method;
-  p->request_uri = request_uri;
-  p->fragment = fragment;
-  p->request_path = request_path;
-  p->query_string = query_string;
-  p->http_version = http_version;
-  p->header_done = header_done;
+http_request_t *http_request_new(void) {
+  http_request_t *req = g_slice_new0(http_request_t);
+  req->chunk = g_string_chunk_new(1024 * 4);
+  req->headers = g_queue_new();
+  return req;
 }
 
 static void free_message_headers(gpointer data, gpointer user_data) {
   (void)user_data;
-  g_slice_free(message_header, data);
+  g_slice_free(message_header_t, data);
 }
 
-void http_request_clear(http_request *req) {
+void http_request_free(http_request_t *req) {
+  g_queue_foreach(req->headers, free_message_headers, NULL);
+  g_queue_free(req->headers);
+  g_string_chunk_free(req->chunk);
+  g_slice_free(http_request_t, req);
+}
+
+void http_request_clear(http_request_t *req) {
   req->method = NULL;
   req->uri = NULL;
   req->fragment = NULL;
@@ -181,10 +185,27 @@ void http_request_clear(http_request *req) {
   g_string_chunk_clear(req->chunk);
 }
 
-void http_request_make(http_request *req,
+void http_request_parser_init(http_request_t *req, http_parser *p) {
+#if 0
+  http_request_init(req);
+#endif
+  p->data = req;
+  p->http_field = http_field;
+  p->request_method = request_method;
+  p->request_uri = request_uri;
+  p->fragment = fragment;
+  p->request_path = request_path;
+  p->query_string = query_string;
+  p->http_version = http_version;
+  p->header_done = header_done;
+}
+
+void http_request_make(http_request_t *req,
   const gchar *method, const gchar *uri)
 {
+#if 0
   http_request_init(req);
+#endif
   req->method = g_string_chunk_insert(req->chunk, method);
   req->uri = g_string_chunk_insert(req->chunk, uri);
   req->http_version = g_string_chunk_insert(req->chunk, "HTTP/1.1");
@@ -192,11 +213,11 @@ void http_request_make(http_request *req,
 
 static void http_request_write_headers(gpointer data, gpointer user_data) {
   FILE *f = (FILE *)user_data;
-  message_header *hdr = (message_header *)data;
+  message_header_t *hdr = (message_header_t *)data;
   fprintf(f, "%s: %s\r\n", hdr->name, hdr->value);
 }
 
-void http_request_debug_print(http_request *req, FILE *f) {
+void http_request_debug_print(http_request_t *req, FILE *f) {
   fprintf(f, "method: %s\n", req->method);
   fprintf(f, "uri: %s\n", req->uri);
   fprintf(f, "fragment: %s\n", req->fragment);
@@ -209,29 +230,19 @@ void http_request_debug_print(http_request *req, FILE *f) {
   fprintf(f, "body: %s\n", req->body);
 }
 
-void http_request_fwrite(http_request *req, FILE *f) {
+void http_request_fwrite(http_request_t *req, FILE *f) {
   fprintf(f, "%s %s %s\r\n", req->method, req->uri, req->http_version);
   g_queue_foreach(req->headers, http_request_write_headers, f);
   fprintf(f, "\r\n");
 }
 
-void http_request_free(http_request *req) {
-  if (req->headers) {
-    g_queue_foreach(req->headers, free_message_headers, NULL);
-    g_queue_free(req->headers);
-  }
-  if (req->chunk) { g_string_chunk_free(req->chunk); }
-  req->headers = 0;
-  req->chunk = 0;
-}
-
 static void message_headers_to_data(gpointer data, gpointer user_data) {
   GString *s = (GString *)user_data;
-  message_header *hdr = (message_header *)data;
+  message_header_t *hdr = (message_header_t *)data;
   g_string_append_printf(s, "%s: %s\r\n", hdr->name, hdr->value);
 }
 
-GString *http_request_data(http_request *req) {
+GString *http_request_data(http_request_t *req) {
   GString *s = g_string_sized_new(1024 * 4);
   g_string_printf(s, "%s %s %s\r\n", req->method,
     req->uri, req->http_version);

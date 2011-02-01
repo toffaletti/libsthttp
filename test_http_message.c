@@ -3,53 +3,52 @@
 #include "http_message.h"
 
 static void test_http_request_init(void) {
-  http_request req;
-  http_request_init(&req);
-  g_assert(req.body == NULL);
-  http_request_free(&req);
+  http_request_t *req = http_request_new();
+  g_assert(req->body == NULL);
+  http_request_free(req);
 }
 
 static void test_http_request_parser_init(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   http_parser_init(&parser);
-  g_assert(req.body == NULL);
-  g_assert(parser.data == &req);
-  http_request_free(&req);
+  g_assert(req->body == NULL);
+  g_assert(parser.data == req);
+  http_request_free(req);
 }
 
 static void test_http_request_make1(void) {
-  http_request req;
-  http_request_make(&req, "GET", "/test/this?thing=1&stuff=2&fun&good");
-  http_request_header_append(&req, "user-agent",
+  http_request_t *req = http_request_new();
+  http_request_make(req, "GET", "/test/this?thing=1&stuff=2&fun&good");
+  http_request_header_append(req, "user-agent",
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18");
-  http_request_header_append(&req, "host", "localhost:8080");
-  http_request_header_append(&req, "accept", "*/*");
+  http_request_header_append(req, "host", "localhost:8080");
+  http_request_header_append(req, "accept", "*/*");
   static const char *sdata =
   "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
   "Host: localhost:8080\r\n"
   "Accept: */*\r\n"
   "\r\n";
-  GString *s = http_request_data(&req);
+  GString *s = http_request_data(req);
   g_assert(g_strcmp0(sdata, s->str) == 0);
   g_string_free(s, TRUE);
-  http_request_free(&req);
+  http_request_free(req);
 }
 
 static void test_http_request_make_parse(void) {
-  http_request req;
-  http_request_make(&req, "GET", "/test/this?thing=1&stuff=2&fun&good");
-  http_request_header_append(&req, "user-agent",
+  http_request_t *req = http_request_new();
+  http_request_make(req, "GET", "/test/this?thing=1&stuff=2&fun&good");
+  http_request_header_append(req, "user-agent",
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18");
-  http_request_header_append(&req, "host", "localhost:8080");
-  http_request_header_append(&req, "accept", "*/*");
-  GString *s = http_request_data(&req);
+  http_request_header_append(req, "host", "localhost:8080");
+  http_request_header_append(req, "accept", "*/*");
+  GString *s = http_request_data(req);
 
-  http_request req2;
+  http_request_t *req2 = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req2, &parser);
+  http_request_parser_init(req2, &parser);
   http_parser_init(&parser);
   http_parser_execute(&parser, s->str, s->len, 0);
   g_assert(!http_parser_has_error(&parser));
@@ -57,14 +56,14 @@ static void test_http_request_make_parse(void) {
 
   g_string_free(s, TRUE);
 
-  http_request_free(&req2);
-  http_request_free(&req);
+  http_request_free(req2);
+  http_request_free(req);
 }
 
 static void test_http_request_parser_normalize_header_names(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
   "usER-agEnT: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -82,27 +81,27 @@ static void test_http_request_parser_normalize_header_names(void) {
   }
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->path, "/test/this") == 0);
+  g_assert(g_strcmp0(req->query_string, "thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_headers(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET http://b.scorecardresearch.com/b?C1=8&C2=6035047&C3=463.9924&C4=ad21868c&C5=173229&C6=16jfaue1ukmeoq&C7=http%3A//remotecontrol.mtv.com/2011/01/20/sammi-sweetheart-giancoloa-terrell-owens-hair/&C8=Hot%20Shots%3A%20Sammi%20%u2018Sweetheart%u2019%20Lets%20Terrell%20Owens%20Play%20With%20Her%20Hair%20%BB%20MTV%20Remote%20Control%20Blog&C9=&C10=1680x1050&rn=58013009 HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -118,24 +117,24 @@ static void test_http_request_parser_headers(void) {
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_unicode_escape(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET http://b.scorecardresearch.com/b?C1=8&C2=6035047&C3=463.9924&C4=ad21868c&C5=173229&C6=16jfaue1ukmeoq&C7=http%3A//remotecontrol.mtv.com/2011/01/20/sammi-sweetheart-giancoloa-terrell-owens-hair/&C8=Hot%20Shots%3A%20Sammi%20%u2018Sweetheart%u2019%20Lets%20Terrell%20Owens%20Play%20With%20Her%20Hair%20%BB%20MTV%20Remote%20Control%20Blog&C9=&C10=1680x1050&rn=58013009 HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -146,24 +145,24 @@ static void test_http_request_parser_unicode_escape(void) {
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_percents(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET http://bh.contextweb.com/bh/getuid?url=http://image2.pubmatic.com/AdServer/Pug?vcode=bz0yJnR5cGU9MSZqcz0xJmNvZGU9ODI1JnRsPTQzMjAw&piggybackCookie=%%CWGUID%%,User_tokens:%%USER_TOKENS%% HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -174,24 +173,24 @@ static void test_http_request_parser_percents(void) {
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_bad_percents(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   /* this site likes to truncate urls included in their requests, which means they chop up % encoding in the original urls */
   /* for example in this url: Trends%2C%&cv= */
   static const char *sdata =
@@ -204,29 +203,29 @@ static void test_http_request_parser_bad_percents(void) {
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
 #if 0
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->path, "/test/this") == 0);
+  g_assert(g_strcmp0(req->query_string, "thing=1&stuff=2&fun&good") == 0);
 #endif
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_p0(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -244,27 +243,27 @@ static void test_http_request_parser_p0(void) {
   }
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->path, "/test/this") == 0);
+  g_assert(g_strcmp0(req->query_string, "thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_p1(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -276,49 +275,49 @@ static void test_http_request_parser_p1(void) {
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->path, "/test/this") == 0);
+  g_assert(g_strcmp0(req->query_string, "thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_p2(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata = "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n";
   http_parser_init(&parser);
   char *data = g_strdup(sdata);
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(!http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->path, "/test/this") == 0);
+  g_assert(g_strcmp0(req->query_string, "thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_p3(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata = "\x01\xff 83949475dsf--==\x45 dsfsdfds";
   http_parser_init(&parser);
   char *data = g_strdup(sdata);
@@ -326,14 +325,14 @@ static void test_http_request_parser_p3(void) {
   g_assert(http_parser_has_error(&parser));
   g_assert(!http_parser_is_finished(&parser));
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_parser_proxy_http12(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET http://example.com:9182/test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -345,29 +344,29 @@ static void test_http_request_parser_proxy_http12(void) {
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.uri, "http://example.com:9182/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->uri, "http://example.com:9182/test/this?thing=1&stuff=2&fun&good") == 0);
   /* path is NULL when fully qualified uri is used */
   /* TODO: maybe add support for full uri parsing */
-  g_assert(req.path == NULL);
-  g_assert(req.query_string == NULL);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(req->path == NULL);
+  g_assert(req->query_string == NULL);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_clear(void) {
-  http_request req;
+  http_request_t *req = http_request_new();
   http_parser parser;
-  http_request_parser_init(&req, &parser);
+  http_request_parser_init(req, &parser);
   static const char *sdata =
   "GET /test/this?thing=1&stuff=2&fun&good HTTP/1.1\r\n"
   "User-Agent: curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18\r\n"
@@ -379,66 +378,65 @@ static void test_http_request_clear(void) {
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->path, "/test/this") == 0);
+  g_assert(g_strcmp0(req->query_string, "thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
   /* clear this request */
-  http_request_clear(&req);
+  http_request_clear(req);
 
-  g_assert(req.method == 0);
-  g_assert(req.uri == 0);
-  g_assert(req.path == 0);
-  g_assert(req.query_string == 0);
-  g_assert(req.http_version == 0);
-  g_assert(req.body == 0);
-  g_assert(req.body_length == 0);
+  g_assert(req->method == 0);
+  g_assert(req->uri == 0);
+  g_assert(req->path == 0);
+  g_assert(req->query_string == 0);
+  g_assert(req->http_version == 0);
+  g_assert(req->body == 0);
+  g_assert(req->body_length == 0);
 
   http_parser_init(&parser);
   http_parser_execute(&parser, data, strlen(data), 0);
   g_assert(!http_parser_has_error(&parser));
   g_assert(http_parser_is_finished(&parser));
-  g_assert(g_strcmp0(req.method, "GET") == 0);
-  g_assert(g_strcmp0(req.uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.path, "/test/this") == 0);
-  g_assert(g_strcmp0(req.query_string, "thing=1&stuff=2&fun&good") == 0);
-  g_assert(g_strcmp0(req.http_version, "HTTP/1.1") == 0);
-  g_assert(g_strcmp0(req.body, NULL) == 0);
-  g_assert(req.body_length == 0);
+  g_assert(g_strcmp0(req->method, "GET") == 0);
+  g_assert(g_strcmp0(req->uri, "/test/this?thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->path, "/test/this") == 0);
+  g_assert(g_strcmp0(req->query_string, "thing=1&stuff=2&fun&good") == 0);
+  g_assert(g_strcmp0(req->http_version, "HTTP/1.1") == 0);
+  g_assert(g_strcmp0(req->body, NULL) == 0);
+  g_assert(req->body_length == 0);
 
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "User-Agent"),
+  g_assert(g_strcmp0(http_request_header_getstr(req, "User-Agent"),
     "curl/7.21.0 (i686-pc-linux-gnu) libcurl/7.21.0 OpenSSL/0.9.8o zlib/1.2.3.4 libidn/1.18") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Host"), "localhost:8080") == 0);
-  g_assert(g_strcmp0(http_request_header_getstr(&req, "Accept"), "*/*") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Host"), "localhost:8080") == 0);
+  g_assert(g_strcmp0(http_request_header_getstr(req, "Accept"), "*/*") == 0);
 
-  http_request_free(&req);
+  http_request_free(req);
   g_free(data);
 }
 
 static void test_http_request_headers(void) {
-  http_request req;
-  http_request_init(&req);
-  http_request_header_append(&req, "test-a", "test-a");
-  http_request_header_append(&req, "test-b", "test-b");
-  http_request_header_append(&req, "test-c", "test-c");
-  http_request_header_append(&req, "test-a", "test-a");
-  g_assert(g_strcmp0("test-a", http_request_header_getstr(&req, "test-a")));
-  g_assert(g_strcmp0("test-b", http_request_header_getstr(&req, "test-b")));
-  g_assert(g_strcmp0("test-c", http_request_header_getstr(&req, "test-c")));
-  g_assert(http_request_header_remove(&req, "Test-A"));
-  g_assert(http_request_header_remove(&req, "Test-B"));
-  g_assert(http_request_header_remove(&req, "Test-C"));
-  g_assert(http_request_header_remove(&req, "Test-A") == FALSE);
-  http_request_free(&req);
+  http_request_t *req = http_request_new();
+  http_request_header_append(req, "test-a", "test-a");
+  http_request_header_append(req, "test-b", "test-b");
+  http_request_header_append(req, "test-c", "test-c");
+  http_request_header_append(req, "test-a", "test-a");
+  g_assert(g_strcmp0("test-a", http_request_header_getstr(req, "test-a")));
+  g_assert(g_strcmp0("test-b", http_request_header_getstr(req, "test-b")));
+  g_assert(g_strcmp0("test-c", http_request_header_getstr(req, "test-c")));
+  g_assert(http_request_header_remove(req, "Test-A"));
+  g_assert(http_request_header_remove(req, "Test-B"));
+  g_assert(http_request_header_remove(req, "Test-C"));
+  g_assert(http_request_header_remove(req, "Test-A") == FALSE);
+  http_request_free(req);
 }
 
 /* http response */
