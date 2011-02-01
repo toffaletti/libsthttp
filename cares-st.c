@@ -41,7 +41,8 @@ static void copy_hostent(struct hostent *from, struct hostent **to) {
   (*to)->h_length = from->h_length;
   (*to)->h_addr_list = calloc(n+1, sizeof(char *));
   (*to)->h_addr_list[0] = calloc(n, from->h_length);
-  memcpy((*to)->h_addr_list[0], from->h_addr_list[0], n*from->h_length);
+  if (n)
+    memcpy((*to)->h_addr_list[0], from->h_addr_list[0], n*from->h_length);
   while (n > 1) {
     n--;
     (*to)->h_addr_list[n] = (*to)->h_addr_list[0] + (n * from->h_length);

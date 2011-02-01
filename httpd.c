@@ -18,9 +18,10 @@ void *handle_connection(void *arg) {
     http_request_debug_print(&s->req, stderr);
     size_t total = 0;
     for (;;) {
-      ssize_t nr = http_stream_read(s, buf, sizeof(buf));
+      ssize_t nr = sizeof(buf);
+      int status = http_stream_read(s, buf, &nr);
       fprintf(stderr, "http_stream_read nr: %zd\n", nr);
-      if (nr <= 0) break;
+      if (status != HTTP_STREAM_OK) break;
       /*fwrite(buf, sizeof(char), nr, stdout);*/
       total += nr;
     }

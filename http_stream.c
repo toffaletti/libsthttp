@@ -169,7 +169,7 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
     CHECK_READ(s, nr);
     if (!STATUS_OK(s)) break;
-    size_t pe = http_parser_execute(&s->parser.server, s->buf, bpos+nr, 0);
+    http_parser_execute(&s->parser.server, s->buf, bpos+nr, 0);
     if (http_parser_has_error(&s->parser.server)) {
       s->status = HTTP_STREAM_PARSE_ERROR;
       break;
@@ -232,7 +232,7 @@ int http_stream_response_read(struct http_stream *s) {
     ssize_t nr = st_read(s->nfd, &s->buf[bpos], s->blen-bpos, s->timeout);
     CHECK_READ(s, nr);
     if (!STATUS_OK(s)) break;
-    size_t pe = httpclient_parser_execute(&s->parser.client, s->buf, bpos+nr, 0);
+    httpclient_parser_execute(&s->parser.client, s->buf, bpos+nr, 0);
     if (httpclient_parser_has_error(&s->parser.client)) {
       s->status = HTTP_STREAM_PARSE_ERROR;
       break;

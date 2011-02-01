@@ -52,19 +52,22 @@ void *handle_connection(void *arg) {
     memset(&cs->req, 0, sizeof(http_request));
     free(request_uri);
 
+    /* TODO: fix this. post might not contain data. probably move this logic into stream */
     size_t total = 0;
-    for (;;) {
-      ssize_t nr = sizeof(buf);
-      status = http_stream_read(s, buf, &nr);
-      fprintf(stderr, "server http_stream_read nr: %zd\n", nr);
-      if (nr <= 0 || status != HTTP_STREAM_OK) break;
-      /*fwrite(buf, sizeof(char), nr, stdout);*/
-      ssize_t nw = st_write(cs->nfd, buf, nr, s->timeout);
-      if (nw != nr) { error=1; goto release; }
-      fprintf(stderr, "st_write nw: %zd\n", nr);
-      total += nr;
+    if (g_strcmp0("POST", s->req.method) == 0) {
+      for (;;) {
+        ssize_t nr = sizeof(buf);
+        status = http_stream_read(s, buf, &nr);
+        fprintf(stderr, "server http_stream_read nr: %zd\n", nr);
+        if (nr <= 0 || status != HTTP_STREAM_OK) { error = 1; goto release; }
+        /*fwrite(buf, sizeof(char), nr, stdout);*/
+        ssize_t nw = st_write(cs->nfd, buf, nr, s->timeout);
+        if (nw != nr) { error=1; goto release; }
+        fprintf(stderr, "st_write nw: %zd\n", nr);
+        total += nr;
+      }
+      fprintf(stderr, "http_stream_read total: %zu\n", total);
     }
-    fprintf(stderr, "http_stream_read total: %zu\n", total);
 
     if (http_stream_response_read(cs) != HTTP_STREAM_OK) { error = 502; goto release; }
 
