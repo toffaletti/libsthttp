@@ -63,7 +63,8 @@ void *handle_connection(void *arg) {
         ssize_t nr = sizeof(buf);
         status = http_stream_read(s, buf, &nr);
         fprintf(stderr, "server http_stream_read nr: %zd\n", nr);
-        if (nr <= 0 || status != HTTP_STREAM_OK) { error = 1; goto release; }
+        if (nr < 0 || status != HTTP_STREAM_OK) { error = 1; goto release; }
+        if (nr == 0) break;
         /*fwrite(buf, sizeof(char), nr, stdout);*/
         ssize_t nw = st_write(cs->nfd, buf, nr, s->timeout);
         if (nw != nr) { error=1; goto release; }
