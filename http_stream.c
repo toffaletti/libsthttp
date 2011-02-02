@@ -213,7 +213,7 @@ int http_stream_request_read(struct http_stream *s, st_netfd_t nfd) {
   return CHECK_STATUS(s);
 }
 
-int http_stream_request_init(struct http_stream *s, const char *method, uri *u) {
+int http_stream_request_init(struct http_stream *s, const char *method, uri_t *u) {
   g_assert(s->status == HTTP_STREAM_OK);
   char *request_uri = uri_compose_partial(u);
   http_request_make(s->req, method, request_uri);

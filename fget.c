@@ -8,19 +8,18 @@ static void *do_get(void *arg) {
   char *uri_s = (char *)arg;
   struct http_stream *s = http_stream_create(HTTP_CLIENT, ST_UTIME_NO_TIMEOUT);
 
-  uri u;
-  uri_init(&u);
+  uri_t *uri = uri_new();
   fprintf(stderr, "uri: %s\n", uri_s);
-  if (uri_parse(&u, uri_s, strlen(uri_s), &error_at) == 0) {
+  if (uri_parse(uri, uri_s, strlen(uri_s), &error_at) == 0) {
     fprintf(stderr, "uri_parse error: %s\n", error_at);
     goto done;
   }
-  uri_normalize(&u);
-  fprintf(stderr, "h: %s\n", u.host);
-  fprintf(stderr, "p: %u\n", u.port);
+  uri_normalize(uri);
+  fprintf(stderr, "h: %s\n", uri->host);
+  fprintf(stderr, "p: %u\n", uri->port);
 
-  if (http_stream_connect(s, u.host, u.port) != HTTP_STREAM_OK) goto done;
-  http_stream_request_init(s, "GET", &u);
+  if (http_stream_connect(s, uri->host, uri->port) != HTTP_STREAM_OK) goto done;
+  http_stream_request_init(s, "GET", uri);
   if (http_stream_request_send(s) != HTTP_STREAM_OK) goto done;
   if (http_stream_response_read(s) != HTTP_STREAM_OK) goto done;
 
@@ -37,7 +36,7 @@ static void *do_get(void *arg) {
   fprintf(stderr, "http_stream_read total: %zu\n", total);
 
 done:
-  uri_free(&u);
+  uri_free(uri);
   http_stream_close(s);
   return NULL;
 }

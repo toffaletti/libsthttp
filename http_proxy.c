@@ -15,7 +15,7 @@ void *handle_connection(void *arg) {
   char buf[4*1024];
   int error = 0;
   struct http_stream *cs = NULL;
-  uri u;
+  uri_t *u = uri_new();
   for (;;) {
     if (s->status != HTTP_STREAM_OK) break;
     memset(&u, 0, sizeof(u));
@@ -35,20 +35,20 @@ void *handle_connection(void *arg) {
 
     fprintf(stderr, "request uri: %s\n", s->req->uri);
     const char *error_at = NULL;
-    uri_init(&u);
-    if (uri_parse(&u, s->req->uri, strlen(s->req->uri), &error_at) == 0) {
+    uri_clear(u);
+    if (uri_parse(u, s->req->uri, strlen(s->req->uri), &error_at) == 0) {
       fprintf(stderr, "uri_parse error: %s\n", error_at);
       error = 400;
       goto release;
     }
-    uri_normalize(&u);
-    if (http_stream_connect(cs, u.host, u.port) != HTTP_STREAM_OK) { error = 504; goto release; }
+    uri_normalize(u);
+    if (http_stream_connect(cs, u->host, u->port) != HTTP_STREAM_OK) { error = 504; goto release; }
     http_request_header_remove(s->req, "Accept-Encoding");
     http_request_header_remove(s->req, "Proxy-Connection");
     /* TODO: need to expose a copy api for http message */
     http_request_t *tmp_req = cs->req;
     cs->req = s->req;
-    char *request_uri = uri_compose_partial(&u);
+    char *request_uri = uri_compose_partial(u);
     char *tmp_uri = s->req->uri;
     cs->req->uri = request_uri;
     if (http_stream_request_send(cs) != HTTP_STREAM_OK) { error = 504; goto release; }
@@ -110,7 +110,7 @@ void *handle_connection(void *arg) {
     }
 release:
     http_request_clear(s->req);
-    uri_free(&u);
+    uri_free(u);
     if (cs) http_stream_close(cs);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
     if (error) {
