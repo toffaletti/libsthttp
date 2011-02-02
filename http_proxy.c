@@ -77,16 +77,18 @@ void *handle_connection(void *arg) {
     if (http_stream_response_read(cs) != HTTP_STREAM_OK) { error = 502; goto release; }
 
     /* TODO: properly create a new response and copy headers */
+    http_response_t *tmp_resp = s->resp;
     s->resp = cs->resp;
-    s->resp.http_version = "HTTP/1.1";
-    http_response_header_remove(&s->resp, "Content-Length");
-    http_response_header_remove(&s->resp, "Transfer-Encoding");
-    if (s->resp.status_code != 204)
-        http_response_header_append(&s->resp, "Transfer-Encoding", "chunked");
+    s->resp->http_version = "HTTP/1.1";
+    http_response_header_remove(s->resp, "Content-Length");
+    http_response_header_remove(s->resp, "Transfer-Encoding");
+    if (s->resp->status_code != 204)
+        http_response_header_append(s->resp, "Transfer-Encoding", "chunked");
     ssize_t nw = http_stream_response_send(s, 0);
-    memset(&s->resp, 0, sizeof(http_response));
+    s->resp = tmp_resp;
+
     fprintf(stderr, "http_stream_response_send: %zd\n", nw);
-    if (s->resp.status_code != 204 &&
+    if (s->resp->status_code != 204 &&
            (cs->content_size > 0 || cs->transfer_encoding == TE_CHUNKED)) {
       total = 0;
       fprintf(stderr, "content size: %zd\n", cs->content_size);
@@ -107,7 +109,6 @@ void *handle_connection(void *arg) {
       }
     }
 release:
-    http_response_free(&s->resp);
     http_request_clear(s->req);
     uri_free(&u);
     if (cs) http_stream_close(cs);
@@ -116,8 +117,9 @@ release:
       fprintf(stderr, "ERROR: %d STATUS: %d, exiting\n", error, s->status);
       /* TODO: use reason string */
       if (error >= 400 && s->status != HTTP_STREAM_CLOSED) {
-        http_response_init(&s->resp, error, "Error");
-        http_response_header_append(&s->resp, "Content-Length", "0");
+        http_response_free(s->resp);
+        s->resp = http_response_new(error, "Error");
+        http_response_header_append(s->resp, "Content-Length", "0");
         s->status = HTTP_STREAM_OK; /* TODO: might want to move this logic into http_stream */
         http_stream_response_send(s, 0);
       }

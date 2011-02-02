@@ -27,13 +27,14 @@ void *handle_connection(void *arg) {
     }
     fprintf(stderr, "http_stream_read total: %zu\n", total);
 
-    http_response_init_200_OK(&s->resp);
-    http_response_header_append(&s->resp, "Content-type", "text/html");
-    /*http_response_header_append(&s->resp, "Connection", "close");*/
-    http_response_set_body(&s->resp, "<H2>It worked!</H2>");
+    http_response_clear(s->resp);
+    s->resp->status_code = 200;
+    s->resp->reason = "OK";
+    http_response_header_append(s->resp, "Content-type", "text/html");
+    /*http_response_header_append(s->resp, "Connection", "close");*/
+    http_response_set_body(s->resp, "<H2>It worked!</H2>");
     ssize_t nw = http_stream_response_send(s, 1);
     fprintf(stderr, "http_stream_response_send: %zd\n", nw);
-    http_response_free(&s->resp);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
   }
   fprintf(stderr, "exiting handle_connection\n");

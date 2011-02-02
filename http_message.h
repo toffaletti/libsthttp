@@ -17,7 +17,7 @@ struct http_request_s {
 };
 typedef struct http_request_s http_request_t;
 
-typedef struct http_response {
+struct http_response_s {
   GStringChunk *chunk; /* string pool */
   GQueue *headers;
   gchar *http_version;
@@ -27,7 +27,8 @@ typedef struct http_response {
   size_t body_length;
   size_t chunk_size;
   int last_chunk;
-} http_response;
+};
+typedef struct http_response_s http_response_t;
 
 extern void http_header_append(GQueue *headers,
   GStringChunk *chunk,
@@ -75,27 +76,26 @@ extern void http_request_free(http_request_t *req);
 
 #define http_response_header_append(resp, field, value) \
   http_header_append( \
-    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response, headers)), \
-    G_STRUCT_MEMBER(GStringChunk *, resp, G_STRUCT_OFFSET(http_response, chunk)), \
+    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response_t, headers)), \
+    G_STRUCT_MEMBER(GStringChunk *, resp, G_STRUCT_OFFSET(http_response_t, chunk)), \
     field, value)
 
 #define http_response_header_remove(resp, field) \
   http_header_remove( \
-    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response, headers)), field)
+    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response_t, headers)), field)
 
 #define http_response_header_getstr(resp, field) \
   http_header_getstr( \
-    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response, headers)), field)
+    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response_t, headers)), field)
 
 #define http_response_header_getull(resp, field) \
   http_header_getull( \
-    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response, headers)), field)
+    G_STRUCT_MEMBER(GQueue *, resp, G_STRUCT_OFFSET(http_response_t, headers)), field)
 
-extern void http_response_parser_init(http_response *resp, httpclient_parser *p);
-extern void http_response_init_200_OK(http_response *resp);
-extern void http_response_init(http_response *resp, unsigned long code, const gchar *reason);
-extern GString *http_response_data(http_response *resp);
-extern void http_response_set_body(http_response *resp, const gchar *body);
-extern void http_response_clear(http_response *resp);
-extern void http_response_free(http_response *resp);
+extern http_response_t *http_response_new(unsigned long code, const gchar *reason);
+extern void http_response_parser_init(http_response_t *resp, httpclient_parser *p);
+extern GString *http_response_data(http_response_t *resp);
+extern void http_response_set_body(http_response_t *resp, const gchar *body);
+extern void http_response_clear(http_response_t *resp);
+extern void http_response_free(http_response_t *resp);
 

@@ -251,12 +251,12 @@ GString *http_request_data(http_request_t *req) {
   return s;
 }
 
-/* http_response */
+/* http_response_t */
 
 static void http_field_cl(void *data, const char *field,
   size_t flen, const char *value, size_t vlen)
 {
-  http_response *resp = (http_response *)data;
+  http_response_t *resp = (http_response_t *)data;
   /* cast away const then temporarily NULL terminate */
   gchar *f = (gchar *)field;
   gchar *v = (gchar *)value;
@@ -273,12 +273,12 @@ static void http_field_cl(void *data, const char *field,
 }
 
 static void reason_phrase_cl(void *data, const char *at, size_t length) {
-  http_response *resp = (http_response *)data;
+  http_response_t *resp = (http_response_t *)data;
   resp->reason = g_string_chunk_insert_len(resp->chunk, at, length);
 }
 
 static void status_code_cl(void *data, const char *at, size_t length) {
-  http_response *resp = (http_response *)data;
+  http_response_t *resp = (http_response_t *)data;
   char s = at[length];
   ((char *)at)[length] = 0;
   resp->status_code = strtoul(at, NULL, 0);
@@ -286,18 +286,18 @@ static void status_code_cl(void *data, const char *at, size_t length) {
 }
 
 static void chunk_size_cl(void *data, const char *at, size_t length) {
-  http_response *resp = (http_response *)data;
+  http_response_t *resp = (http_response_t *)data;
   const gchar *chunk_size = g_string_chunk_insert_len(resp->chunk, at, length);
   resp->chunk_size = strtoull(chunk_size, NULL, 16);
 }
 
 static void http_version_cl(void *data, const char *at, size_t length) {
-  http_response *resp = (http_response *)data;
+  http_response_t *resp = (http_response_t *)data;
   resp->http_version = g_string_chunk_insert_len(resp->chunk, at, length);
 }
 
 static void header_done_cl(void *data, const char *at, size_t length) {
-  http_response *resp = (http_response *)data;
+  http_response_t *resp = (http_response_t *)data;
   /* set body */
   /* TODO: the length is not right here */
   /* printf("HEADER DONE: %zu [%s]\n", length, at); */
@@ -310,36 +310,21 @@ static void header_done_cl(void *data, const char *at, size_t length) {
 static void last_chunk_cl(void *data, const char *at, size_t length) {
   (void)at;
   (void)length;
-  http_response *resp = (http_response *)data;
+  http_response_t *resp = (http_response_t *)data;
   resp->last_chunk = TRUE;
 }
 
-void http_response_init_200_OK(http_response *resp) {
-  http_response_init(resp, 200, "OK");
-}
-
-void http_response_init(http_response *resp, unsigned long code, const gchar *reason) {
+http_response_t *http_response_new(unsigned long code, const gchar *reason) {
+  http_response_t *resp = g_slice_new0(http_response_t);
   resp->chunk = g_string_chunk_new(1024 * 4);
   resp->headers = g_queue_new();
   resp->http_version = g_string_chunk_insert(resp->chunk, "HTTP/1.1");
   resp->status_code = code;
   resp->reason = g_string_chunk_insert(resp->chunk, reason);
-  resp->body = NULL;
-  resp->body_length = 0;
-  resp->chunk_size = 0;
-  resp->last_chunk = FALSE;
+  return resp;
 }
 
-void http_response_parser_init(http_response *resp, httpclient_parser *p) {
-  resp->chunk = g_string_chunk_new(1024 * 4);
-  resp->headers = g_queue_new();
-  resp->http_version = NULL;
-  resp->status_code = 0;
-  resp->reason = NULL;
-  resp->body = NULL;
-  resp->body_length = 0;
-  resp->chunk_size = 0;
-  resp->last_chunk = FALSE;
+void http_response_parser_init(http_response_t *resp, httpclient_parser *p) {
   p->data = resp;
   p->http_field = http_field_cl;
   p->reason_phrase = reason_phrase_cl;
@@ -350,7 +335,7 @@ void http_response_parser_init(http_response *resp, httpclient_parser *p) {
   p->last_chunk = last_chunk_cl;
 }
 
-void http_response_set_body(http_response *resp, const gchar *body) {
+void http_response_set_body(http_response_t *resp, const gchar *body) {
   gchar lenstr[32];
   resp->body = body;
   resp->body_length = strlen(body);
@@ -359,7 +344,7 @@ void http_response_set_body(http_response *resp, const gchar *body) {
   http_response_header_append(resp, "Content-Length", lenstr);
 }
 
-GString *http_response_data(http_response *resp) {
+GString *http_response_data(http_response_t *resp) {
   GString *s = g_string_sized_new(1024);
   g_string_printf(s, "%s %lu %s\r\n", resp->http_version,
     resp->status_code, resp->reason);
@@ -369,7 +354,7 @@ GString *http_response_data(http_response *resp) {
   return s;
 }
 
-void http_response_clear(http_response *resp) {
+void http_response_clear(http_response_t *resp) {
   resp->http_version = NULL;
   resp->status_code = 0;
   resp->reason = NULL;
@@ -385,7 +370,7 @@ void http_response_clear(http_response *resp) {
   g_string_chunk_clear(resp->chunk);
 }
 
-void http_response_free(http_response *resp) {
+void http_response_free(http_response_t *resp) {
   if (resp->headers) {
     g_queue_foreach(resp->headers, free_message_headers, NULL);
     g_queue_free(resp->headers);
@@ -393,4 +378,5 @@ void http_response_free(http_response *resp) {
   if (resp->chunk) { g_string_chunk_free(resp->chunk); }
   resp->headers = 0;
   resp->chunk = 0;
+  g_slice_free(http_response_t, resp);
 }

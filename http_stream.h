@@ -51,7 +51,7 @@ struct http_stream {
     http_parser server;
     httpclient_parser client;
   } parser;
-  http_response resp;
+  http_response_t *resp;
   http_request_t *req;
 }; /* http_stream */
 
