@@ -20,9 +20,9 @@ typedef struct http_request_s http_request_t;
 struct http_response_s {
   GStringChunk *chunk; /* string pool */
   GQueue *headers;
-  gchar *http_version;
+  const gchar *http_version;
   unsigned long status_code;
-  gchar *reason;
+  const gchar *reason;
   const gchar *body;
   size_t body_length;
   size_t chunk_size;

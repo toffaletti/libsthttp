@@ -318,9 +318,9 @@ http_response_t *http_response_new(unsigned long code, const gchar *reason) {
   http_response_t *resp = g_slice_new0(http_response_t);
   resp->chunk = g_string_chunk_new(1024 * 4);
   resp->headers = g_queue_new();
-  resp->http_version = g_string_chunk_insert(resp->chunk, "HTTP/1.1");
+  resp->http_version = "HTTP/1.1";
   resp->status_code = code;
-  resp->reason = g_string_chunk_insert(resp->chunk, reason);
+  resp->reason = reason;
   return resp;
 }
 
