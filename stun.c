@@ -8,15 +8,57 @@
 #include <pthread.h>
 #include "st.h"
 
-struct packet_s {
-    /* listening addr */
-    u_int32_t laddr;
-    u_int16_t lport;
+
+union address_u {
+    struct sockaddr sa;
+    struct sockaddr_in sa_in;
+    struct sockaddr_in6 sa_in6;
+    struct sockaddr_storage sa_stor;
+};
+typedef union address_u address_t;
+
+#define ADDRESS_PORT(addr) (addr.sa.sa_family == AF_INET ? addr.sa_in.sin_port : addr.sa_in6.sin6_port)
+#define ADDRESS_STRING(addr, buf, size) \
+    (addr.sa.sa_family == AF_INET ? \
+        inet_ntop(addr.sa.sa_family, &addr.sa_in.sin_addr, buf, size) : \
+        inet_ntop(addr.sa.sa_family, &addr.sa_in6.sin6_addr, buf, size))
+
+struct addr_s {
+    u_int16_t family;
+    u_int16_t port;
+    union {
+        struct in_addr in4;
+        struct in6_addr in6;
+    } addr;
+} __attribute__((__packed__));
+typedef struct addr_s addr_t;
+
+#define ADDR_STRING(a, buf, size) \
+    (a.family == AF_INET ? \
+        inet_ntop(a.family, &a.addr.in4, buf, size) : \
+        inet_ntop(a.family, &a.addr.in6, buf, size))
+
+static void address_to_addr(address_t *a, addr_t *b) {
+    if (a->sa.sa_family == AF_INET) {
+        b->family = a->sa_in.sin_family;
+        b->port = a->sa_in.sin_port;
+        b->addr.in4 = a->sa_in.sin_addr;
+    } else if (a->sa.sa_family == AF_INET6) {
+    }
+}
+
+struct packet_header_s {
+    /* local addr */
+    addr_t laddr;
     /* remote addr */
-    u_int32_t raddr;
-    u_int16_t rport;
+    addr_t raddr;
     /* packet size and data */
     u_int16_t size;
+} __attribute__((__packed__));
+#define PACKET_HEADER_SIZE sizeof(struct packet_header_s)
+
+struct packet_s {
+    struct packet_header_s hdr;
     char buf[4*1024];
 } __attribute__((__packed__));
 
@@ -55,35 +97,35 @@ static void *tunnel_handler(void *arg) {
 
 static void *handle_connection(void *arg) {
     st_netfd_t client_nfd = (st_netfd_t)arg;
-    struct sockaddr listening_addr;
-    struct sockaddr remote_addr;
+    address_t listening_addr;
+    address_t local_addr;
     socklen_t slen;
     int status;
     gpointer hkey;
 
     slen = sizeof(listening_addr);
-    status = getsockname(st_netfd_fileno(client_nfd), &listening_addr, &slen);
-    g_assert(status == 0);
-    slen = sizeof(remote_addr);
-    status = getpeername(st_netfd_fileno(client_nfd), &remote_addr, &slen);
+    status = getsockname(st_netfd_fileno(client_nfd), &listening_addr.sa, &slen);
     g_assert(status == 0);
 
-    hkey = (gpointer)((struct sockaddr_in *)&remote_addr)->sin_port;
+    slen = sizeof(local_addr);
+    status = getpeername(st_netfd_fileno(client_nfd), &local_addr.sa, &slen);
+    g_assert(status == 0);
+
+    hkey = (gpointer)ADDRESS_PORT(local_addr);
     g_hash_table_insert(connections, hkey, client_nfd);
 
+    char addrbuf[INET6_ADDRSTRLEN];
     printf("new peer: %s:%u\n",
-        inet_ntoa(((struct sockaddr_in *)&remote_addr)->sin_addr),
-       ((struct sockaddr_in *)&remote_addr)->sin_port);
+        ADDRESS_STRING(local_addr, addrbuf, sizeof(addrbuf)), ntohs(ADDRESS_PORT(local_addr)));
 
     for (;;) {
-        struct packet_s *p = g_slice_new(struct packet_s);
+        struct packet_s *p = g_slice_new0(struct packet_s);
         ssize_t nr = st_read(client_nfd, p->buf, sizeof(p->buf), ST_UTIME_NO_TIMEOUT);
         if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-        p->laddr = ((struct sockaddr_in *)&listening_addr)->sin_addr.s_addr;
-        p->lport = ((struct sockaddr_in *)&listening_addr)->sin_port;
-        p->raddr = ((struct sockaddr_in *)&remote_addr)->sin_addr.s_addr;
-        p->rport = ((struct sockaddr_in *)&remote_addr)->sin_port;
-        p->size = nr;
+        /* TODO: ipv6 support */
+        address_to_addr(&local_addr, &p->hdr.laddr);
+        /* TODO: fill in remote address from mapping */
+        p->hdr.size = nr;
         queue_push_notify(tun_write_fd, write_packet_queue, p);
     }
     printf("closing\n");
@@ -96,17 +138,17 @@ static void *handle_connection(void *arg) {
 static void *tunnel_thread(void *arg) {
     st_init();
 
-    struct sockaddr_in rmt_addr;
+    address_t rmt_addr;
     int sock;
     st_netfd_t rmt_nfd;
 
     memset(&rmt_addr, 0, sizeof(rmt_addr));
-    rmt_addr.sin_family = AF_INET;
-    rmt_addr.sin_port = htons(9001);
-    inet_aton("127.0.0.1", &rmt_addr.sin_addr);
+    rmt_addr.sa_in.sin_family = AF_INET;
+    rmt_addr.sa_in.sin_port = htons(9001);
+    inet_pton(AF_INET, "127.0.0.1", &rmt_addr.sa_in.sin_addr);
 
     /* Connect to remote host */
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((sock = socket(rmt_addr.sa.sa_family, SOCK_STREAM, 0)) < 0) {
         goto done;
     }
     if ((rmt_nfd = st_netfd_open_socket(sock)) == NULL) {
@@ -136,9 +178,10 @@ static void *tunnel_thread(void *arg) {
         if (pds[0].revents & POLLIN) {
             printf("data to be read from tunnel\n");
             struct packet_s *p = g_slice_new(struct packet_s);
-            ssize_t nr = st_read(rmt_nfd, p, 18, ST_UTIME_NO_TIMEOUT);
+            ssize_t nr = st_read(rmt_nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-            nr = st_read(rmt_nfd, p->buf, p->size, ST_UTIME_NO_TIMEOUT);
+            nr = st_read(rmt_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
+            printf("read %zd out of %d\n", nr, p->hdr.size);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
             queue_push_notify(tun_read_fd, read_packet_queue, p);
         }
@@ -147,12 +190,14 @@ static void *tunnel_thread(void *arg) {
             char tmp[1];
             read(tun_read_fd, tmp, 1);
             struct packet_s *p;
+            char laddrbuf[INET6_ADDRSTRLEN];
+            char raddrbuf[INET6_ADDRSTRLEN];
             while ((p = g_async_queue_try_pop(write_packet_queue))) {
                 printf("packet local: %s:%u remote: %s:%u size: %u\n",
-                    inet_ntoa(*((struct in_addr *)&p->laddr)), ntohs(p->lport),
-                    inet_ntoa(*((struct in_addr *)&p->raddr)), ntohs(p->rport),
-                    p->size);
-                ssize_t nw = st_write(rmt_nfd, p, 18+p->size, ST_UTIME_NO_TIMEOUT);
+                    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
+                    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
+                    p->hdr.size);
+                ssize_t nw = st_write(rmt_nfd, p, PACKET_HEADER_SIZE+p->hdr.size, ST_UTIME_NO_TIMEOUT);
                 g_slice_free(struct packet_s, p);
                 if (nw <= 0) goto done;
             }
@@ -237,15 +282,18 @@ static void *write_sthread(void *arg) {
             char tmp[1];
             read(tun_write_fd, tmp, 1);
             struct packet_s *p;
+            char laddrbuf[INET6_ADDRSTRLEN];
+            char raddrbuf[INET6_ADDRSTRLEN];
             while ((p = g_async_queue_try_pop(read_packet_queue))) {
                 printf("packet read queue local: %s:%u remote: %s:%u size: %u\n",
-                    inet_ntoa(*((struct in_addr *)&p->laddr)), ntohs(p->lport),
-                    inet_ntoa(*((struct in_addr *)&p->raddr)), ntohs(p->rport),
-                    p->size);
-                st_netfd_t client_nfd = g_hash_table_lookup(connections, (gpointer)p->rport);
+                    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
+                    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
+                    p->hdr.size);
+                st_netfd_t client_nfd = g_hash_table_lookup(connections, (gpointer)p->hdr.laddr.port);
                 if (client_nfd) {
                     printf("found client!\n");
-                    ssize_t nw = st_write(client_nfd, p->buf, p->size, ST_UTIME_NO_TIMEOUT);
+                    ssize_t nw = st_write(client_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
+                    printf("%zd bytes written to client\n", nw);
                     if (nw <= 0) { printf("write failed\n"); }
                 } else {
                     printf("client not found\n");
@@ -264,6 +312,13 @@ int main(int argc, char *argv[]) {
         perror("st_init");
         exit(1);
     }
+
+    printf("sizeof(addr_t) = %zu\n", sizeof(addr_t));
+    printf("sizeof(struct sockaddr) = %zu\n", sizeof(struct sockaddr));
+    printf("sizeof(struct sockaddr_in) = %zu\n", sizeof(struct sockaddr_in));
+    printf("sizeof(struct sockaddr_in6) = %zu\n", sizeof(struct sockaddr_in6));
+    printf("sizeof(struct sockaddr_storage) = %zu\n", sizeof(struct sockaddr_storage));
+    printf("sizeof(address_t) = %zu\n", sizeof(address_t));
 
     int sockets[2];
     socketpair(AF_UNIX, SOCK_STREAM, 0, sockets);
