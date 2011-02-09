@@ -79,30 +79,27 @@ struct packet_s {
 } __attribute__((__packed__));
 
 /* TODO: replace server_s */
-struct state_s {
+struct server_s {
+    st_netfd_t nfd;
+    void *(*start)(void *arg);
+
     GHashTable *connections;
-    /* verbs read and write here refer to the actions taken on the tunnel socket */
     GAsyncQueue *read_queue;
     GAsyncQueue *write_queue;
-    int read_fd; /* used to notify when tunnel has read */
-    int write_fd; /* used to notify when tunnel needs write */
+    int read_fd; /* used to notify when read_queue becomes not empty */
+    int write_fd; /* used to notify when write queue becomes not empty */
+
+    addr_t listen_addr;
+    addr_t remote_addr; /* remote address to send packets to on the other side of tunnel */
+    addr_t tunnel_addr; /* address of remote tunnel */
+
+    st_thread_t listen_sthread;
+    st_thread_t write_sthread;
 };
-typedef struct state_s state_t;
+typedef struct server_s server_t;
 
 static GHashTable *netmap;
-static GHashTable *connections;
-/* verbs read and write here refer to the actions taken on the tunnel socket */
-static GAsyncQueue *read_packet_queue;
-static GAsyncQueue *write_packet_queue;
-static int tun_read_fd; /* used to notify when tunnel has read */
-static int tun_write_fd; /* used to notify when tunnel needs write */
-
-/* tunnel size */
-static GHashTable *tun_connections;
-static GAsyncQueue *out_read_packet_queue;
-static GAsyncQueue *out_write_packet_queue;
-static int out_read_fd; /* used to notify when out tunnel has read */
-static int out_write_fd; /* used to notify when out tunnel needs write */
+static server_t *tunnel_server;
 
 void queue_push_notify(int fd, GAsyncQueue *q, gpointer data) {
     g_async_queue_lock(q);
@@ -122,7 +119,7 @@ static void *tunnel_handler(void *arg) {
     struct pollfd pds[2];
     pds[0].fd = st_netfd_fileno(client_nfd);
     pds[0].events = POLLIN;
-    pds[1].fd = out_write_fd;
+    pds[1].fd = tunnel_server->write_fd;
     pds[1].events = POLLIN;
 
     for (;;) {
@@ -137,16 +134,16 @@ static void *tunnel_handler(void *arg) {
             nr = st_read(client_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
             printf("read %zd out of %d\n", nr, p->hdr.size);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-            queue_push_notify(out_write_fd, out_write_packet_queue, p);
+            queue_push_notify(tunnel_server->write_fd, tunnel_server->write_queue, p);
         }
 
         if (pds[1].revents & POLLIN) {
             char tmp[1];
-            read(out_write_fd, tmp, 1);
+            read(tunnel_server->write_fd, tmp, 1);
             struct packet_s *p;
             char laddrbuf[INET6_ADDRSTRLEN];
             char raddrbuf[INET6_ADDRSTRLEN];
-            while ((p = g_async_queue_try_pop(out_read_packet_queue))) {
+            while ((p = g_async_queue_try_pop(tunnel_server->read_queue))) {
                 printf("tunnel packet local: %s:%u remote: %s:%u size: %u\n",
                     ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
                     ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
@@ -169,7 +166,7 @@ static void *tunnel_out_read_sthread(void *arg) {
     socklen_t slen;
     int status;
 
-    st_netfd_t client_nfd = g_hash_table_lookup(tun_connections, laddr);
+    st_netfd_t client_nfd = g_hash_table_lookup(tunnel_server->connections, laddr);
     g_assert(client_nfd);
 
     slen = sizeof(remote_addr);
@@ -188,13 +185,13 @@ static void *tunnel_out_read_sthread(void *arg) {
         memcpy(&p->hdr.laddr, laddr, sizeof(addr_t));
         address_to_addr(&remote_addr, &p->hdr.raddr);
         p->hdr.size = nr;
-        queue_push_notify(out_read_fd, out_read_packet_queue, p);
+        queue_push_notify(tunnel_server->read_fd, tunnel_server->read_queue, p);
     }
 
     printf("closing out tunnel connection: %s:%u\n",
         ADDRESS_STRING(remote_addr, addrbuf, sizeof(addrbuf)),
         ntohs(ADDRESS_PORT(remote_addr)));
-    g_hash_table_remove(tun_connections, laddr);
+    g_hash_table_remove(tunnel_server->connections, laddr);
     g_slice_free(addr_t, laddr);
     st_netfd_close(client_nfd);
     return NULL;
@@ -204,7 +201,7 @@ static void *tunnel_out_thread(void *arg) {
     st_init();
 
     struct pollfd pds[1];
-    pds[0].fd = out_read_fd;
+    pds[0].fd = tunnel_server->read_fd;
     pds[0].events = POLLIN;
     for (;;) {
         pds[0].revents = 0;
@@ -213,16 +210,16 @@ static void *tunnel_out_thread(void *arg) {
         if (pds[0].revents & POLLIN) {
             printf("out write queue notified\n");
             char tmp[1];
-            read(out_read_fd, tmp, 1);
+            read(tunnel_server->read_fd, tmp, 1);
             struct packet_s *p;
             char laddrbuf[INET6_ADDRSTRLEN];
             char raddrbuf[INET6_ADDRSTRLEN];
-            while ((p = g_async_queue_try_pop(out_write_packet_queue))) {
+            while ((p = g_async_queue_try_pop(tunnel_server->write_queue))) {
                 printf("packet out write queue local: %s:%u remote: %s:%u size: %u\n",
                     ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
                     ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
                     p->hdr.size);
-                st_netfd_t client_nfd = g_hash_table_lookup(tun_connections, &p->hdr.laddr);
+                st_netfd_t client_nfd = g_hash_table_lookup(tunnel_server->connections, &p->hdr.laddr);
                 if (client_nfd) {
                     printf("found tunnel out client!\n");
                     ssize_t nw = st_write(client_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
@@ -249,7 +246,7 @@ static void *tunnel_out_thread(void *arg) {
                         printf("connected to remote host!\n");
                         addr_t *laddr = g_slice_new0(addr_t);
                         memcpy(laddr, &p->hdr.laddr, sizeof(addr_t));
-                        g_hash_table_insert(tun_connections, laddr, rmt_nfd);
+                        g_hash_table_insert(tunnel_server->connections, laddr, rmt_nfd);
 
                         ssize_t nw = st_write(rmt_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
                         printf("%zd bytes written to tunnel out client\n", nw);
@@ -287,8 +284,12 @@ static void *handle_connection(void *arg) {
     status = getpeername(st_netfd_fileno(client_nfd), &local_addr.sa, &slen);
     g_assert(status == 0);
 
+    address_to_addr(&listening_addr, &laddr);
+    server_t *s = g_hash_table_lookup(netmap, &laddr);
+    g_assert(s);
+
     hkey = (gpointer)ADDRESS_PORT(local_addr);
-    g_hash_table_insert(connections, hkey, client_nfd);
+    g_hash_table_insert(s->connections, hkey, client_nfd);
 
     char addrbuf[INET6_ADDRSTRLEN];
     printf("new peer: %s:%u\n",
@@ -301,38 +302,26 @@ static void *handle_connection(void *arg) {
         if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
         address_to_addr(&local_addr, &p->hdr.laddr);
         address_to_addr(&listening_addr, &laddr);
-        /* TODO: fill in remote address from mapping */
-        addr_t *remote_addr = g_hash_table_lookup(netmap, &laddr);
-        char addrbuf[INET6_ADDRSTRLEN];
-        if (remote_addr) {
-            printf("found remote: %s:%u\n",
-                ADDR_STRING(*remote_addr, addrbuf, sizeof(addrbuf)),
-                ntohs(remote_addr->port));
-            memcpy(&p->hdr.raddr, remote_addr, sizeof(addr_t));
-        } else {
-            printf("no remote found\n");
-        }
+        memcpy(&p->hdr.raddr, &s->remote_addr, sizeof(addr_t));
         p->hdr.size = nr;
-        queue_push_notify(tun_write_fd, write_packet_queue, p);
+        queue_push_notify(s->write_fd, s->write_queue, p);
     }
     printf("closing\n");
-    gboolean removed = g_hash_table_remove(connections, hkey);
+    gboolean removed = g_hash_table_remove(s->connections, hkey);
     g_assert(removed);
     st_netfd_close(client_nfd);
     return NULL;
 }
 
 static void *tunnel_thread(void *arg) {
+    server_t *s = (server_t *)arg;
     st_init();
 
     address_t rmt_addr;
     int sock;
     st_netfd_t rmt_nfd;
 
-    memset(&rmt_addr, 0, sizeof(rmt_addr));
-    rmt_addr.sa_in.sin_family = AF_INET;
-    rmt_addr.sa_in.sin_port = htons(9001);
-    inet_pton(AF_INET, "127.0.0.1", &rmt_addr.sa_in.sin_addr);
+    addr_to_address(&s->tunnel_addr, &rmt_addr);
 
     /* Connect to remote host */
     if ((sock = socket(rmt_addr.sa.sa_family, SOCK_STREAM, 0)) < 0) {
@@ -355,7 +344,7 @@ static void *tunnel_thread(void *arg) {
     struct pollfd pds[2];
     pds[0].fd = sock;
     pds[0].events = POLLIN;
-    pds[1].fd = tun_read_fd;
+    pds[1].fd = s->read_fd;
     pds[1].events = POLLIN;
     for (;;) {
         pds[0].revents = 0;
@@ -370,16 +359,16 @@ static void *tunnel_thread(void *arg) {
             nr = st_read(rmt_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
             printf("read %zd out of %d\n", nr, p->hdr.size);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-            queue_push_notify(tun_read_fd, read_packet_queue, p);
+            queue_push_notify(s->read_fd, s->read_queue, p);
         }
 
         if (pds[1].revents & POLLIN) {
             char tmp[1];
-            read(tun_read_fd, tmp, 1);
+            read(s->read_fd, tmp, 1);
             struct packet_s *p;
             char laddrbuf[INET6_ADDRSTRLEN];
             char raddrbuf[INET6_ADDRSTRLEN];
-            while ((p = g_async_queue_try_pop(write_packet_queue))) {
+            while ((p = g_async_queue_try_pop(s->write_queue))) {
                 printf("packet local: %s:%u remote: %s:%u size: %u\n",
                     ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
                     ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
@@ -397,12 +386,6 @@ done:
     return NULL;
 }
 
-struct server_s {
-    st_netfd_t nfd;
-    u_int16_t port;
-    void *(*start)(void *arg);
-};
-
 static void *accept_loop(void *arg) {
     struct server_s *s = (struct server_s *)arg;
     st_netfd_t client_nfd;
@@ -419,13 +402,11 @@ static void *accept_loop(void *arg) {
             fprintf(stderr, "st_thread_create error\n");
         }
     }
-    free(s);
 }
 
-static st_thread_t listen_server(u_int16_t port, void *(*start)(void *arg)) {
+static st_thread_t listen_server(server_t *s, void *(*start)(void *arg)) {
     int sock;
     int n;
-    struct sockaddr_in serv_addr;
 
     if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket");
@@ -436,10 +417,12 @@ static st_thread_t listen_server(u_int16_t port, void *(*start)(void *arg)) {
         perror("setsockopt SO_REUSEADDR");
     }
 
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
-    serv_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
+    address_t serv_addr;
+    addr_to_address(&s->listen_addr, &serv_addr);
+    char addrbuf[INET6_ADDRSTRLEN];
+    printf("binding listening socket to: %s:%u\n",
+        ADDRESS_STRING(serv_addr, addrbuf, sizeof(addrbuf)),
+        ntohs(ADDRESS_PORT(serv_addr)));
 
     if (bind(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("bind");
@@ -449,16 +432,15 @@ static st_thread_t listen_server(u_int16_t port, void *(*start)(void *arg)) {
         perror("listen");
     }
 
-    struct server_s *s = malloc(sizeof(struct server_s));
     s->nfd = st_netfd_open_socket(sock);
-    s->port = port;
     s->start = start;
     return st_thread_create(accept_loop, (void *)s, 0, 4 * 1024);
 }
 
 static void *write_sthread(void *arg) {
+    server_t *s = (server_t *)arg;
     struct pollfd pds[1];
-    pds[0].fd = tun_write_fd;
+    pds[0].fd = s->write_fd;
     pds[0].events = POLLIN;
     for (;;) {
         pds[0].revents = 0;
@@ -467,16 +449,16 @@ static void *write_sthread(void *arg) {
         if (pds[0].revents & POLLIN) {
             printf("read queue notified\n");
             char tmp[1];
-            read(tun_write_fd, tmp, 1);
+            read(s->write_fd, tmp, 1);
             struct packet_s *p;
             char laddrbuf[INET6_ADDRSTRLEN];
             char raddrbuf[INET6_ADDRSTRLEN];
-            while ((p = g_async_queue_try_pop(read_packet_queue))) {
+            while ((p = g_async_queue_try_pop(s->read_queue))) {
                 printf("packet read queue local: %s:%u remote: %s:%u size: %u\n",
                     ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
                     ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
                     p->hdr.size);
-                st_netfd_t client_nfd = g_hash_table_lookup(connections, (gpointer)p->hdr.laddr.port);
+                st_netfd_t client_nfd = g_hash_table_lookup(s->connections, (gpointer)p->hdr.laddr.port);
                 if (client_nfd) {
                     printf("found client!\n");
                     ssize_t nw = st_write(client_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
@@ -557,28 +539,35 @@ static void parse_config(void) {
             printf("route config found: %s\n", group);
             gchar *listen_address_str = g_key_file_get_value(kf, group, "listen_address", NULL);
             gchar *remote_address_str = g_key_file_get_value(kf, group, "remote_address", NULL);
-            if (!listen_address_str || !remote_address_str) continue;
-            addr_t *listen_addr = g_slice_new0(addr_t);
-            addr_t *remote_addr = g_slice_new0(addr_t);
+            gchar *tunnel_address_str = g_key_file_get_value(kf, group, "tunnel_address", NULL);
+            if (!listen_address_str || !remote_address_str || !tunnel_address_str) continue;
+            server_t *s = g_slice_new0(server_t);
             /* TODO: leaks memory on error */
-            if (strtoaddr(listen_address_str, listen_addr) != 1) {
+            if (strtoaddr(listen_address_str, &s->listen_addr) != 1) {
                 printf("invalid address: %s\n", listen_address_str);
                 continue;
             }
-            if (strtoaddr(remote_address_str, remote_addr) != 1) {
+            if (strtoaddr(remote_address_str, &s->remote_addr) != 1) {
                 printf("invalid address: %s\n", remote_address_str);
+                continue;
+            }
+            if (strtoaddr(tunnel_address_str, &s->tunnel_addr) != 1) {
+                printf("invalid address: %s\n", tunnel_address_str);
                 continue;
             }
             char addrbuf[INET6_ADDRSTRLEN];
             printf("listening address: %s:%u\n",
-                ADDR_STRING(*listen_addr, addrbuf, sizeof(addrbuf)),
-                ntohs(listen_addr->port));
+                ADDR_STRING(s->listen_addr, addrbuf, sizeof(addrbuf)),
+                ntohs(s->listen_addr.port));
             printf("remote address: %s:%u\n",
-                ADDR_STRING(*remote_addr, addrbuf, sizeof(addrbuf)),
-                ntohs(remote_addr->port));
-            g_hash_table_insert(netmap, listen_addr, remote_addr);
+                ADDR_STRING(s->remote_addr, addrbuf, sizeof(addrbuf)),
+                ntohs(s->remote_addr.port));
+            g_hash_table_insert(netmap, &s->listen_addr, s);
+            g_free(listen_address_str);
+            g_free(remote_address_str);
         }
     }
+    g_free(start_group);
 free_groups:
     g_strfreev(groups);
 
@@ -601,39 +590,47 @@ int main(int argc, char *argv[]) {
     printf("sizeof(struct sockaddr_storage) = %zu\n", sizeof(struct sockaddr_storage));
     printf("sizeof(address_t) = %zu\n", sizeof(address_t));
 
+    int sockets[2];
+    int status;
+
     netmap = g_hash_table_new(g_int_hash, addr_match);
     parse_config();
 
-    int sockets[2];
-    int status;
     /* TODO: should require a mode and either be a tunnel listener or connector */
+    /* start tunnel listener */
+    tunnel_server = g_slice_new0(server_t);
     status = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets);
     g_assert(status ==  0);
-    tun_write_fd = sockets[0];
-    tun_read_fd = sockets[1];
-
-    status = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets);
-    g_assert(status ==  0);
-    out_write_fd = sockets[0];
-    out_read_fd = sockets[1];
-
-    read_packet_queue = g_async_queue_new_full(packet_free);
-    write_packet_queue = g_async_queue_new_full(packet_free);
-
-    out_read_packet_queue = g_async_queue_new_full(packet_free);
-    out_write_packet_queue = g_async_queue_new_full(packet_free);
-
-    connections = g_hash_table_new(g_direct_hash, g_direct_equal);
-    tun_connections = g_hash_table_new(g_int_hash, addr_match);
-
-    g_thread_create(tunnel_thread, NULL, TRUE, NULL);
-    st_thread_create(write_sthread, NULL, 0, 4*1024);
+    tunnel_server->write_fd = sockets[0];
+    tunnel_server->read_fd = sockets[1];
+    tunnel_server->read_queue = g_async_queue_new_full(packet_free);
+    tunnel_server->write_queue = g_async_queue_new_full(packet_free);
+    tunnel_server->connections = g_hash_table_new(g_int_hash, addr_match);
+    tunnel_server->listen_addr.family = AF_INET;
+    tunnel_server->listen_addr.port = htons(9001);
+    tunnel_server->listen_addr.addr.in4.s_addr = inet_addr("0.0.0.0");
+    tunnel_server->listen_sthread = listen_server(tunnel_server, tunnel_handler);
     g_thread_create(tunnel_out_thread, NULL, TRUE, NULL);
 
-    st_thread_t t1 = listen_server(9000, handle_connection);
-    st_thread_t t2 = listen_server(9001, tunnel_handler);
-    st_thread_join(t1, NULL);
-    st_thread_join(t2, NULL);
+    /* start port listeners */
+    GHashTableIter iter;
+    addr_t *listen_addr;
+    server_t *s;
+    g_hash_table_iter_init(&iter, netmap);
+    while (g_hash_table_iter_next(&iter, (gpointer *)&listen_addr, (gpointer *)&s)) {
+        status = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets);
+        g_assert(status ==  0);
+        s->write_fd = sockets[0];
+        s->read_fd = sockets[1];
+        s->read_queue = g_async_queue_new_full(packet_free);
+        s->write_queue = g_async_queue_new_full(packet_free);
+        s->connections = g_hash_table_new(g_direct_hash, g_direct_equal);
+        s->listen_sthread = listen_server(s, handle_connection);
+        s->write_sthread = st_thread_create(write_sthread, s, 0, 4*1024);
+        g_thread_create(tunnel_thread, s, TRUE, NULL);
+    }
+
+    st_thread_join(tunnel_server->listen_sthread, NULL);
 
     st_thread_exit(NULL);
     g_warn_if_reached();
