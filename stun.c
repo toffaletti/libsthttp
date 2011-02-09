@@ -499,6 +499,35 @@ static gboolean addr_match(gconstpointer a_, gconstpointer b_) {
     return FALSE;
 }
 
+static void parse_config(void) {
+    GKeyFile *kf = g_key_file_new();
+
+    if (!g_key_file_load_from_file(kf, "stun.conf", G_KEY_FILE_NONE, NULL)) {
+        printf("no stun.conf found\n");
+        goto free_key_file;
+    }
+
+    gchar *start_group = g_key_file_get_start_group(kf);
+    printf("start group: %s\n", start_group);
+
+    gchar **groups = g_key_file_get_groups(kf, NULL);
+    int i = 0;
+    gchar *group = NULL;
+    while ((group = groups[i])) {
+        printf("group: %s\n", group);
+        /* if group name starts with route, setup route */
+        if (g_strstr_len(group, -1, "route") == group) {
+            printf("route config found!\n");
+        }
+        i++;
+    }
+free_groups:
+    g_strfreev(groups);
+
+free_key_file:
+    g_key_file_free(kf);
+}
+
 int main(int argc, char *argv[]) {
     g_thread_init(NULL);
 
@@ -513,6 +542,8 @@ int main(int argc, char *argv[]) {
     printf("sizeof(struct sockaddr_in6) = %zu\n", sizeof(struct sockaddr_in6));
     printf("sizeof(struct sockaddr_storage) = %zu\n", sizeof(struct sockaddr_storage));
     printf("sizeof(address_t) = %zu\n", sizeof(address_t));
+
+    parse_config();
 
     int sockets[2];
     int status;
