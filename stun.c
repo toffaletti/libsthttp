@@ -529,6 +529,13 @@ static void parse_config(void) {
     gchar *start_group = g_key_file_get_start_group(kf);
     printf("start group: %s\n", start_group);
 
+    gchar *tun_listen_address_str = g_key_file_get_value(kf, "tunnel", "listen_address", NULL);
+    g_assert(tun_listen_address_str);
+    if (strtoaddr(tun_listen_address_str, &tunnel_server->listen_addr) != 1) {
+        printf("invalid address: %s\n", tun_listen_address_str);
+    }
+    g_free(tun_listen_address_str);
+
     gchar **groups = g_key_file_get_groups(kf, NULL);
     int i = 0;
     gchar *group = NULL;
@@ -594,9 +601,7 @@ int main(int argc, char *argv[]) {
     int status;
 
     netmap = g_hash_table_new(g_int_hash, addr_match);
-    parse_config();
 
-    /* TODO: should require a mode and either be a tunnel listener or connector */
     /* start tunnel listener */
     tunnel_server = g_slice_new0(server_t);
     status = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets);
@@ -606,9 +611,10 @@ int main(int argc, char *argv[]) {
     tunnel_server->read_queue = g_async_queue_new_full(packet_free);
     tunnel_server->write_queue = g_async_queue_new_full(packet_free);
     tunnel_server->connections = g_hash_table_new(g_int_hash, addr_match);
-    tunnel_server->listen_addr.family = AF_INET;
-    tunnel_server->listen_addr.port = htons(9001);
-    tunnel_server->listen_addr.addr.in4.s_addr = inet_addr("0.0.0.0");
+
+    parse_config();
+
+    /* TODO: should require a mode and either be a tunnel listener or connector */
     tunnel_server->listen_sthread = listen_server(tunnel_server, tunnel_handler);
     g_thread_create(tunnel_out_thread, NULL, TRUE, NULL);
 
