@@ -80,12 +80,12 @@ struct packet_s {
 
 /* TODO: replace server_s */
 struct state_s {
-	GHashTable *connections;
-	/* verbs read and write here refer to the actions taken on the tunnel socket */
-	GAsyncQueue *read_queue;
-	GAsyncQueue *write_queue;
-	int read_fd; /* used to notify when tunnel has read */
-	int write_fd; /* used to notify when tunnel needs write */
+    GHashTable *connections;
+    /* verbs read and write here refer to the actions taken on the tunnel socket */
+    GAsyncQueue *read_queue;
+    GAsyncQueue *write_queue;
+    int read_fd; /* used to notify when tunnel has read */
+    int write_fd; /* used to notify when tunnel needs write */
 };
 typedef struct state_s state_t;
 
@@ -511,29 +511,29 @@ static gboolean addr_match(gconstpointer a_, gconstpointer b_) {
 }
 
 static int strtoaddr(const char *s, addr_t *a) {
-	if (!s) return 0;
-	int success = 0;
+    if (!s) return 0;
+    int success = 0;
 
-	gchar *port_str = strrchr(s, ':');
-	if (!port_str) return 0;
+    gchar *port_str = strrchr(s, ':');
+    if (!port_str) return 0;
 
-	*port_str = 0;
-	++port_str;
-	a->port = htons((u_int16_t)strtol(port_str, NULL, 0));
-	if (a->port == 0) goto done;
-	if (inet_pton(AF_INET, s, &a->addr.in4) > 0) {
-		a->family = AF_INET;
-	} else if (inet_pton(AF_INET6, s, &a->addr.in6) > 0) {
-		a->family = AF_INET6;
-	} else {
-		goto done;
-	}
+    *port_str = 0;
+    ++port_str;
+    a->port = htons((u_int16_t)strtol(port_str, NULL, 0));
+    if (a->port == 0) goto done;
+    if (inet_pton(AF_INET, s, &a->addr.in4) > 0) {
+        a->family = AF_INET;
+    } else if (inet_pton(AF_INET6, s, &a->addr.in6) > 0) {
+        a->family = AF_INET6;
+    } else {
+        goto done;
+    }
 
-	success=1;
+    success=1;
 done:
-	--port_str;
-	*port_str = ':';
-	return success;
+    --port_str;
+    *port_str = ':';
+    return success;
 }
 
 static void parse_config(void) {
@@ -550,33 +550,33 @@ static void parse_config(void) {
     gchar **groups = g_key_file_get_groups(kf, NULL);
     int i = 0;
     gchar *group = NULL;
-	for (int i = 0; (group = groups[i]); i++) {
+    for (int i = 0; (group = groups[i]); i++) {
         printf("group: %s\n", group);
         /* if group name starts with route, setup route */
         if (g_strstr_len(group, -1, "route") == group) {
             printf("route config found: %s\n", group);
-			gchar *listen_address_str = g_key_file_get_value(kf, group, "listen_address", NULL);
-			gchar *remote_address_str = g_key_file_get_value(kf, group, "remote_address", NULL);
-			if (!listen_address_str || !remote_address_str) continue;
-			addr_t *listen_addr = g_slice_new0(addr_t);
-			addr_t *remote_addr = g_slice_new0(addr_t);
-			/* TODO: leaks memory on error */
-			if (strtoaddr(listen_address_str, listen_addr) != 1) {
-				printf("invalid address: %s\n", listen_address_str);
-				continue;
-			}
-			if (strtoaddr(remote_address_str, remote_addr) != 1) {
-				printf("invalid address: %s\n", remote_address_str);
-				continue;
-			}
+            gchar *listen_address_str = g_key_file_get_value(kf, group, "listen_address", NULL);
+            gchar *remote_address_str = g_key_file_get_value(kf, group, "remote_address", NULL);
+            if (!listen_address_str || !remote_address_str) continue;
+            addr_t *listen_addr = g_slice_new0(addr_t);
+            addr_t *remote_addr = g_slice_new0(addr_t);
+            /* TODO: leaks memory on error */
+            if (strtoaddr(listen_address_str, listen_addr) != 1) {
+                printf("invalid address: %s\n", listen_address_str);
+                continue;
+            }
+            if (strtoaddr(remote_address_str, remote_addr) != 1) {
+                printf("invalid address: %s\n", remote_address_str);
+                continue;
+            }
             char addrbuf[INET6_ADDRSTRLEN];
-			printf("listening address: %s:%u\n",
-				ADDR_STRING(*listen_addr, addrbuf, sizeof(addrbuf)),
-				ntohs(listen_addr->port));
-			printf("remote address: %s:%u\n",
-				ADDR_STRING(*remote_addr, addrbuf, sizeof(addrbuf)),
-				ntohs(remote_addr->port));
-			g_hash_table_insert(netmap, listen_addr, remote_addr);
+            printf("listening address: %s:%u\n",
+                ADDR_STRING(*listen_addr, addrbuf, sizeof(addrbuf)),
+                ntohs(listen_addr->port));
+            printf("remote address: %s:%u\n",
+                ADDR_STRING(*remote_addr, addrbuf, sizeof(addrbuf)),
+                ntohs(remote_addr->port));
+            g_hash_table_insert(netmap, listen_addr, remote_addr);
         }
     }
 free_groups:
