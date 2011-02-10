@@ -129,9 +129,9 @@ static void *tunnel_handler(void *arg) {
 
         if (pds[0].revents & POLLIN) {
             struct packet_s *p = g_slice_new(struct packet_s);
-            ssize_t nr = st_read(client_nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
+            ssize_t nr = st_read_fully(client_nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-            nr = st_read(client_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
+            nr = st_read_fully(client_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
             printf("read %zd out of %d\n", nr, p->hdr.size);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
             queue_push_notify(tunnel_server->write_fd, tunnel_server->write_queue, p);
@@ -354,9 +354,9 @@ static void *tunnel_thread(void *arg) {
         if (pds[0].revents & POLLIN) {
             printf("data to be read from tunnel\n");
             struct packet_s *p = g_slice_new(struct packet_s);
-            ssize_t nr = st_read(rmt_nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
+            ssize_t nr = st_read_fully(rmt_nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-            nr = st_read(rmt_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
+            nr = st_read_fully(rmt_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
             printf("read %zd out of %d\n", nr, p->hdr.size);
             if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
             queue_push_notify(s->read_fd, s->read_queue, p);
@@ -537,7 +537,6 @@ static void parse_config(void) {
     g_free(tun_listen_address_str);
 
     gchar **groups = g_key_file_get_groups(kf, NULL);
-    int i = 0;
     gchar *group = NULL;
     for (int i = 0; (group = groups[i]); i++) {
         printf("group: %s\n", group);
@@ -572,6 +571,7 @@ static void parse_config(void) {
             g_hash_table_insert(netmap, &s->listen_addr, s);
             g_free(listen_address_str);
             g_free(remote_address_str);
+            g_free(tunnel_address_str);
         }
     }
     g_free(start_group);
