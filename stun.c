@@ -619,11 +619,11 @@ done:
     return success;
 }
 
-static void parse_config(void) {
+static void parse_config(const gchar *conffile) {
     GKeyFile *kf = g_key_file_new();
 
-    if (!g_key_file_load_from_file(kf, "stun.conf", G_KEY_FILE_NONE, NULL)) {
-        printf("no stun.conf found\n");
+    if (!g_key_file_load_from_file(kf, conffile, G_KEY_FILE_NONE, NULL)) {
+        printf("error loading config: [%s]\n", conffile);
         goto free_key_file;
     }
 
@@ -683,6 +683,14 @@ free_key_file:
     g_key_file_free(kf);
 }
 
+
+static const gchar *conffile = "stun.conf";
+
+static GOptionEntry entires[] = {
+    {"config", 'c', 0, G_OPTION_ARG_FILENAME, &conffile, "config file path", NULL},
+    {NULL, 0, 0, 0, 0 , NULL, NULL}
+};
+
 int main(int argc, char *argv[]) {
     g_thread_init(NULL);
 
@@ -707,7 +715,16 @@ int main(int argc, char *argv[]) {
     /* start tunnel listener */
     tunnel_server = g_slice_new0(server_t);
 
-    parse_config();
+    GError *error = NULL;
+    GOptionContext *optctx = g_option_context_new("stun");
+
+    g_option_context_add_main_entries(optctx, entires, NULL);
+    if (!g_option_context_parse(optctx, &argc, &argv, &error)) {
+        g_print("option parsing failed: %s\n", error->message);
+        exit(1);
+    }
+
+    parse_config(conffile);
 
     /* TODO: should require a mode and either be a tunnel listener or connector */
     tunnel_server->listen_sthread = listen_server(tunnel_server, tunnel_handler);
