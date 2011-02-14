@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include "st.h"
+#include <zlib.h>
 
 union address_u {
     struct sockaddr sa;
@@ -84,6 +85,7 @@ static gboolean addr_match(gconstpointer a_, gconstpointer b_) {
 
 enum packet_flag_e {
     TUN_FLAG_CLOSE = 1,
+    TUN_FLAG_COMPRESSED = 2,
 };
 
 struct packet_header_s {
@@ -96,10 +98,11 @@ struct packet_header_s {
     u_int16_t size;
 } __attribute__((__packed__));
 #define PACKET_HEADER_SIZE sizeof(struct packet_header_s)
+#define PACKET_DATA_SIZE (4*1024)
 
 struct packet_s {
     struct packet_header_s hdr;
-    char buf[4*1024];
+    char buf[PACKET_DATA_SIZE];
 } __attribute__((__packed__));
 
 static void packet_free(gpointer data) {
@@ -153,6 +156,59 @@ void queue_push_notify(int fd, GAsyncQueue *q, gpointer data) {
     if (len == 0) { write(fd, (void*)"\x01", 1); }
 }
 
+static ssize_t packet_write(z_streamp strm, st_netfd_t nfd, struct packet_s *p) {
+    char buf[PACKET_DATA_SIZE*2];
+    ssize_t nw = 0;
+    if (p->hdr.size) {
+        strm->next_in = (Bytef *)p->buf;
+        strm->avail_in = p->hdr.size;
+        strm->next_out = (Bytef *)buf;
+        strm->avail_out = sizeof(buf);
+        int status = deflate(strm, Z_FINISH);
+        g_assert(status == Z_STREAM_END);
+        if (strm->total_out < p->hdr.size) {
+            printf("< deflate total out: %zu/%zu\n", strm->total_out, p->hdr.size);
+            p->hdr.flags |= TUN_FLAG_COMPRESSED;
+            p->hdr.size = strm->total_out;
+            struct iovec iov[2];
+            iov[0].iov_base = &p->hdr;
+            iov[0].iov_len = PACKET_HEADER_SIZE;
+            iov[1].iov_base = buf;
+            iov[1].iov_len = strm->total_out;
+            nw = st_writev(nfd, iov, 2, ST_UTIME_NO_TIMEOUT);
+        } else {
+            nw = st_write(nfd, p, PACKET_HEADER_SIZE+p->hdr.size, ST_UTIME_NO_TIMEOUT);
+        }
+        deflateReset(strm);
+    } else {
+        nw = st_write(nfd, p, PACKET_HEADER_SIZE+p->hdr.size, ST_UTIME_NO_TIMEOUT);
+    }
+    return nw;
+}
+
+static ssize_t packet_read(z_streamp strm, st_netfd_t nfd, struct packet_s *p) {
+    ssize_t nr = st_read_fully(nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
+    if (nr <= 0) return -1;
+    nr = st_read_fully(nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
+    if (nr != p->hdr.size) return -1;
+    if (p->hdr.flags & TUN_FLAG_COMPRESSED) {
+        char buf[PACKET_DATA_SIZE];
+        strm->next_in = (Bytef *)p->buf;
+        strm->avail_in = p->hdr.size;
+        strm->next_out = (Bytef *)buf;
+        strm->avail_out = sizeof(buf);
+        int status = inflate(strm, Z_FINISH);
+        //printf("status: %d msg: %s\n", status, strm->msg);
+        g_assert(status == Z_STREAM_END);
+        printf("< inflate %zu/%zu\n", strm->total_out, p->hdr.size);
+        p->hdr.flags &= TUN_FLAG_COMPRESSED;
+        p->hdr.size = strm->total_out;
+        memcpy(p->buf, buf, p->hdr.size);
+        inflateReset(strm);
+        return p->hdr.size;
+    }
+    return nr;
+}
 
 /* pass state info to tunnel_out_read_sthread */
 struct tun_out_s {
@@ -191,6 +247,7 @@ static void *tunnel_out_read_sthread(void *arg) {
         ssize_t nr = st_read(client_nfd, p->buf, sizeof(p->buf), ST_UTIME_NO_TIMEOUT);
         if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
         if (!g_hash_table_lookup(s->connections, laddr)) {
+            printf("client not found in connection table\n");
             /* client has been removed from table. probably got close packet */
             g_slice_free(struct packet_s, p);
             break;
@@ -307,6 +364,17 @@ static void *tunnel_handler(void *arg) {
     struct pollfd pds[2];
     socklen_t slen;
 
+    z_stream zso;
+    memset(&zso, 0, sizeof(zso));
+    status = deflateInit2(&zso, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 9, Z_DEFAULT_STRATEGY);
+    g_assert(status == Z_OK);
+    printf("default bound: %zu\n", deflateBound(&zso, PACKET_DATA_SIZE));
+
+    z_stream zsi;
+    memset(&zsi, 0, sizeof(zsi));
+    status = inflateInit2(&zsi, -15);
+    g_assert(status == Z_OK);
+
     slen = sizeof(local_addr);
     status = getpeername(st_netfd_fileno(client_nfd), &local_addr.sa, &slen);
     g_assert(status == 0);
@@ -329,11 +397,9 @@ static void *tunnel_handler(void *arg) {
 
         if (pds[0].revents & POLLIN) {
             struct packet_s *p = g_slice_new(struct packet_s);
-            ssize_t nr = st_read_fully(client_nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
-            if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-            nr = st_read_fully(client_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
+            ssize_t nr = packet_read(&zsi, client_nfd, p);
+            if (nr < 0) { g_slice_free(struct packet_s, p); break; }
             //printf("tunnel slave read %zd out of %d\n", nr, p->hdr.size);
-            if (nr != p->hdr.size) { g_slice_free(struct packet_s, p); break; }
             queue_push_notify(s->write_fd, s->write_queue, p);
         }
 
@@ -348,7 +414,7 @@ static void *tunnel_handler(void *arg) {
                 //    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
                 //    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
                 //    p->hdr.size);
-                ssize_t nw = st_write(client_nfd, p, PACKET_HEADER_SIZE+p->hdr.size, ST_UTIME_NO_TIMEOUT);
+                ssize_t nw = packet_write(&zso, client_nfd, p);
                 g_slice_free(struct packet_s, p);
                 if (nw <= 0) goto done;
             }
@@ -356,6 +422,8 @@ static void *tunnel_handler(void *arg) {
     }
 done:
     printf("exiting tunnel handler!!\n");
+    deflateEnd(&zso);
+    inflateEnd(&zsi);
     g_hash_table_remove(tunmap, &s->remote_addr);
     g_slice_free(server_t, s);
     st_netfd_close(client_nfd);
@@ -429,8 +497,21 @@ static void *handle_connection(void *arg) {
 }
 
 static void *tunnel_thread(void *arg) {
+    /* connect to remote side of tunnel */
+    int status;
     server_t *s = (server_t *)arg;
     st_init();
+
+    z_stream zso;
+    memset(&zso, 0, sizeof(zso));
+    status = deflateInit2(&zso, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 9, Z_DEFAULT_STRATEGY);
+    g_assert(status == Z_OK);
+    printf("default bound: %zu\n", deflateBound(&zso, PACKET_DATA_SIZE));
+
+    z_stream zsi;
+    memset(&zsi, 0, sizeof(zsi));
+    status = inflateInit2(&zsi, -15);
+    g_assert(status == Z_OK);
 
     address_t rmt_addr;
     int sock;
@@ -456,6 +537,7 @@ static void *tunnel_thread(void *arg) {
     }
     printf("connected to tunnel!\n");
 
+
     struct pollfd pds[2];
     pds[0].fd = sock;
     pds[0].events = POLLIN;
@@ -469,11 +551,8 @@ static void *tunnel_thread(void *arg) {
         if (pds[0].revents & POLLIN) {
             //printf("data to be read from tunnel\n");
             struct packet_s *p = g_slice_new(struct packet_s);
-            ssize_t nr = st_read_fully(rmt_nfd, p, PACKET_HEADER_SIZE, ST_UTIME_NO_TIMEOUT);
-            if (nr <= 0) { g_slice_free(struct packet_s, p); break; }
-            nr = st_read_fully(rmt_nfd, p->buf, p->hdr.size, ST_UTIME_NO_TIMEOUT);
-            //printf("tunnel master read %zd out of %d\n", nr, p->hdr.size);
-            if (nr != p->hdr.size) { g_slice_free(struct packet_s, p); break; }
+            ssize_t nr = packet_read(&zsi, rmt_nfd, p);
+            if (nr < 0) { g_slice_free(struct packet_s, p); break; }
             queue_push_notify(s->read_fd, s->read_queue, p);
         }
 
@@ -488,7 +567,7 @@ static void *tunnel_thread(void *arg) {
                 //    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
                 //    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
                 //    p->hdr.size);
-                ssize_t nw = st_write(rmt_nfd, p, PACKET_HEADER_SIZE+p->hdr.size, ST_UTIME_NO_TIMEOUT);
+                ssize_t nw = packet_write(&zso, rmt_nfd, p);
                 g_slice_free(struct packet_s, p);
                 if (nw <= 0) goto done;
             }
@@ -496,6 +575,8 @@ static void *tunnel_thread(void *arg) {
     }
 done:
     printf("exiting tunnel thread!!\n");
+    deflateEnd(&zso);
+    inflateEnd(&zsi);
     st_thread_exit(NULL);
     g_warn_if_reached();
     return NULL;
