@@ -77,6 +77,7 @@ int http_stream_connect(struct http_stream *s, const char *address, uint16_t por
     char addr_buf[46] = "??";
     inet_ntop(host->h_addrtype, *p, addr_buf, sizeof(addr_buf));
 
+    /* TODO: this can be moved outside the loop i think */
     int sock;
 
     if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
