@@ -43,7 +43,7 @@ add_executable(stun stun.c cares-st.c http_message.c http_stream.c)
 target_link_libraries(stun glib-2.0 gthread-2.0 st cares uri http11 http11client z)
 add_dependencies(stun st cares uri http11 http11client)
 
-add_executable(st-ssl ssl.c cares-st.c http_message.c http_stream.c)
+add_executable(st-ssl ssl.c cares-st.c bio_netfd.c http_message.c http_stream.c)
 target_link_libraries(st-ssl glib-2.0 st cares uri http11 http11client ssl)
 add_dependencies(st-ssl st cares uri http11 http11client)
 
