@@ -74,8 +74,8 @@ int http_stream_connect(struct http_stream *s, const char *address, uint16_t por
   char **p = NULL;
   for (p = host->h_addr_list; *p; p++)
   {
-    char addr_buf[46] = "??";
-    inet_ntop(host->h_addrtype, *p, addr_buf, sizeof(addr_buf));
+    //char addr_buf[46] = "??";
+    //inet_ntop(host->h_addrtype, *p, addr_buf, sizeof(addr_buf));
 
     /* TODO: this can be moved outside the loop i think */
     int sock;
