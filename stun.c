@@ -426,6 +426,7 @@ static void *tunnel_handler(void *arg) {
     struct pollfd pds[2];
     socklen_t slen;
 
+    server_t *s = NULL;
     SSL_CTX *ctx = NULL;
     BIO *bio_ssl = NULL;
     BIO *bio = bio_nfd;
@@ -472,7 +473,7 @@ static void *tunnel_handler(void *arg) {
     status = getpeername(st_netfd_fileno(client_nfd), &local_addr.sa, &slen);
     g_assert(status == 0);
 
-    server_t *s = server_new();
+    s = server_new();
     /* use remote_addr to store the peer address since it is unused */
     address_to_addr(&local_addr, &s->remote_addr);
     g_thread_create(tunnel_out_thread, s, TRUE, NULL);
@@ -530,8 +531,10 @@ done:
     BIO_free_all(bio);
     deflateEnd(&zso);
     inflateEnd(&zsi);
-    g_hash_table_remove(tunmap, &s->remote_addr);
-    g_slice_free(server_t, s);
+    if (s) {
+        g_hash_table_remove(tunmap, &s->remote_addr);
+        g_slice_free(server_t, s);
+    }
     st_netfd_close(client_nfd);
     return NULL;
 }
@@ -626,6 +629,10 @@ static void *tunnel_thread(void *arg) {
 
     addr_to_address(&s->tunnel_addr, &rmt_addr);
 
+    SSL_CTX *ctx = NULL;
+    BIO *bio = NULL;
+    BIO *bio_ssl = NULL;
+
     /* Connect to remote host */
     if ((sock = socket(rmt_addr.sa.sa_family, SOCK_STREAM, 0)) < 0) {
         close(sock);
@@ -634,6 +641,7 @@ static void *tunnel_thread(void *arg) {
 
     st_netfd_t rmt_nfd;
     bio_nfd = BIO_new_netfd(sock, BIO_CLOSE);
+    bio = bio_nfd;
     BIO_get_fp(bio_nfd, &rmt_nfd);
 
     for (;;) {
@@ -646,9 +654,6 @@ static void *tunnel_thread(void *arg) {
     }
     printf("connected to tunnel!\n");
 
-    SSL_CTX *ctx = NULL;
-    BIO *bio = bio_nfd;
-    BIO *bio_ssl = NULL;
     if (s->tunnel_secure) {
         ctx = SSL_CTX_new(SSLv23_client_method());
 

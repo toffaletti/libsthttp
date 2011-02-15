@@ -122,7 +122,7 @@ static int netfd_connect(BIO *b) {
     netfd_state_t *s = (netfd_state_t *)b->ptr;
     int ret = 0;
     int status;
-    struct hostent *host;
+    struct hostent *host = NULL;
 
     /* TODO: fix port lookup if for example port is in param_hostname like: "google.com:http" */
     //if (!port) port = 80;
