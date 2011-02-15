@@ -160,7 +160,13 @@ void queue_push_notify(int fd, GAsyncQueue *q, gpointer data) {
     int len = g_async_queue_length_unlocked(q);
     g_async_queue_push_unlocked(q, data);
     g_async_queue_unlock(q);
-    if (len == 0) { write(fd, (void*)"\x01", 1); }
+    if (len == 0) {
+        int n = write(fd, (void*)"\x01", 1);
+        if (n != 1) {
+            perror("queue push notify write failed?!?!?!");
+            abort();
+        }
+    }
 }
 
 static ssize_t packet_bio_write(z_streamp strm, BIO *bio, struct packet_s *p) {
@@ -191,13 +197,20 @@ static ssize_t packet_bio_write(z_streamp strm, BIO *bio, struct packet_s *p) {
     return nw;
 }
 
+// TODO: need to write a BIO_read_fully()
+
 static ssize_t packet_bio_read(z_streamp strm, BIO *bio, struct packet_s *p) {
     //printf("bio read\n");
     ssize_t nr = BIO_read(bio, p, PACKET_HEADER_SIZE);
     if (nr <= 0) return -1;
-    nr = BIO_read(bio, p->buf, p->hdr.size);
+    if (p->hdr.size) {
+        nr = BIO_read(bio, p->buf, p->hdr.size);
+        if (nr != p->hdr.size) return -1;
+    } else {
+        // 0 bytes read because packet payload was empty
+        nr = 0;
+    }
     //printf("bio read hdr size: %zd\n", nr);
-    if (nr != p->hdr.size) return -1;
     if (p->hdr.flags & TUN_FLAG_COMPRESSED) {
         char buf[PACKET_DATA_SIZE];
         strm->next_in = (Bytef *)p->buf;
@@ -350,7 +363,8 @@ static void *tunnel_out_thread(void *arg) {
 
         if (pds[0].revents & POLLIN) {
             char tmp[1];
-            read(s->read_fd, tmp, 1);
+            int n = read(s->read_fd, tmp, 1);
+            g_assert(n == 1);
             struct packet_s *p;
             //char laddrbuf[INET6_ADDRSTRLEN];
             //char raddrbuf[INET6_ADDRSTRLEN];
@@ -491,13 +505,13 @@ static void *tunnel_handler(void *arg) {
 
         if (pds[0].revents & POLLIN) {
             do {
-                //printf("tunnel server read\n");
+                printf("tunnel server read\n");
                 struct packet_s *p = g_slice_new(struct packet_s);
                 //ssize_t nr = packet_read(&zsi, client_nfd, p);
                 ssize_t nr = packet_bio_read(&zsi, bio, p);
                 if (nr < 0) { g_slice_free(struct packet_s, p); break; }
-                //printf("tunnel slave read %zd out of %d\n", nr, p->hdr.size);
-                //printf("bio pending: %zd\n", BIO_ctrl_pending(bio));
+                printf("tunnel slave read %zd out of %d\n", nr, p->hdr.size);
+                printf("bio pending: %zd\n", BIO_ctrl_pending(bio));
                 queue_push_notify(s->write_fd, s->write_queue, p);
                 /* BIO ssl seems to buffer data, so the loop with 
                  * BIO_ctrl_pending will help avoid

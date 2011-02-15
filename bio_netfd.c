@@ -109,7 +109,7 @@ static int netfd_write(BIO *b, const char *buf, int num) {
 
 static int netfd_read(BIO *b, char *buf, int size) {
     netfd_state_t *s = (netfd_state_t *)b->ptr;
-    return st_read_fully(s->nfd, buf, size, ST_UTIME_NO_TIMEOUT);
+    return st_read(s->nfd, buf, size, ST_UTIME_NO_TIMEOUT);
 }
 
 static int netfd_puts(BIO *b, const char *str) {
