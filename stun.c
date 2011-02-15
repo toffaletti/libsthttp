@@ -126,6 +126,7 @@ struct server_s {
     addr_t listen_addr;
     addr_t remote_addr; /* remote address to send packets to on the other side of tunnel */
     addr_t tunnel_addr; /* address of remote tunnel */
+    int tunnel_secure; /* TODO: maybe this should be a mask of modes? */
 
     st_thread_t listen_sthread;
     st_thread_t write_sthread;
@@ -147,9 +148,12 @@ server_t *server_new(void) {
     return s;
 }
 
+/* globals */
 static GHashTable *netmap;
 static GHashTable *tunmap;
 static server_t *tunnel_server;
+static const gchar *tunnel_cert_path;
+static const gchar *tunnel_pkey_path;
 
 void queue_push_notify(int fd, GAsyncQueue *q, gpointer data) {
     g_async_queue_lock(q);
@@ -422,31 +426,36 @@ static void *tunnel_handler(void *arg) {
     struct pollfd pds[2];
     socklen_t slen;
 
-    SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
+    SSL_CTX *ctx = NULL;
+    BIO *bio_ssl = NULL;
+    BIO *bio = bio_nfd;
 
-    // http://h71000.www7.hp.com/doc/83final/ba554_90007/ch04s03.html
-    if (!SSL_CTX_use_certificate_file(ctx, "server.pem", SSL_FILETYPE_PEM)) {
-        fprintf(stderr, "error loading cert file\n");
-        ERR_print_errors_fp(stderr);
-        goto done;
+    if (tunnel_cert_path && tunnel_pkey_path) {
+        ctx = SSL_CTX_new(SSLv23_server_method());
+
+        // http://h71000.www7.hp.com/doc/83final/ba554_90007/ch04s03.html
+        if (!SSL_CTX_use_certificate_file(ctx, tunnel_cert_path, SSL_FILETYPE_PEM)) {
+            fprintf(stderr, "error loading cert file\n");
+            ERR_print_errors_fp(stderr);
+            goto done;
+        }
+        if (!SSL_CTX_use_PrivateKey_file(ctx, tunnel_pkey_path, SSL_FILETYPE_PEM)) {
+            fprintf(stderr, "error loading private key file\n");
+            ERR_print_errors_fp(stderr);
+            goto done;
+        }
+
+        bio_ssl = BIO_new_ssl(ctx, 0);
+        bio = BIO_push(bio_ssl, bio_nfd);
+
+        if (BIO_do_handshake(bio_ssl) <= 0) {
+            fprintf(stderr, "Error establishing SSL with accept socket\n");
+            ERR_print_errors_fp(stderr);
+            goto done;
+        }
+
+        printf("SSL handshake with client done\n");
     }
-    if (!SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM)) {
-        fprintf(stderr, "error loading private key file\n");
-        ERR_print_errors_fp(stderr);
-        goto done;
-    }
-
-    BIO *bio_ssl = BIO_new_ssl(ctx, 0);
-    //BIO *bio = bio_nfd;
-    BIO *bio = BIO_push(bio_ssl, bio_nfd);
-
-    if (BIO_do_handshake(bio_ssl) <= 0) {
-        fprintf(stderr, "Error establishing SSL with accept socket\n");
-        ERR_print_errors_fp(stderr);
-        goto done;
-    }
-
-    printf("SSL handshake with client done\n");
 
     z_stream zso;
     memset(&zso, 0, sizeof(zso));
@@ -517,6 +526,8 @@ static void *tunnel_handler(void *arg) {
     }
 done:
     printf("exiting tunnel handler!!\n");
+    if (ctx) SSL_CTX_free(ctx);
+    BIO_free_all(bio);
     deflateEnd(&zso);
     inflateEnd(&zsi);
     g_hash_table_remove(tunmap, &s->remote_addr);
@@ -617,24 +628,11 @@ static void *tunnel_thread(void *arg) {
 
     /* Connect to remote host */
     if ((sock = socket(rmt_addr.sa.sa_family, SOCK_STREAM, 0)) < 0) {
+        close(sock);
         goto done;
     }
 
     st_netfd_t rmt_nfd;
-#if 0
-    if ((rmt_nfd = st_netfd_open_socket(sock)) == NULL) {
-        close(sock);
-        goto done;
-    }
-    for (;;) {
-        if (st_connect(rmt_nfd, (struct sockaddr *)&rmt_addr,
-              sizeof(rmt_addr), ST_UTIME_NO_TIMEOUT) == 0) {
-            break;
-        }
-        printf("sleeping before reconnecting tunnel\n");
-        st_sleep(1);
-    }
-#else
     bio_nfd = BIO_new_netfd(sock, BIO_CLOSE);
     BIO_get_fp(bio_nfd, &rmt_nfd);
 
@@ -646,22 +644,25 @@ static void *tunnel_thread(void *arg) {
         printf("sleeping before reconnecting tunnel\n");
         st_sleep(1);
     }
-#endif
     printf("connected to tunnel!\n");
 
-    SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());
+    SSL_CTX *ctx = NULL;
+    BIO *bio = bio_nfd;
+    BIO *bio_ssl = NULL;
+    if (s->tunnel_secure) {
+        ctx = SSL_CTX_new(SSLv23_client_method());
 
-    BIO *bio_ssl = BIO_new_ssl(ctx, 1);
-    //BIO *bio = bio_nfd;
-    BIO *bio = BIO_push(bio_ssl, bio_nfd);
+        bio_ssl = BIO_new_ssl(ctx, 1);
+        bio = BIO_push(bio_ssl, bio_nfd);
 
-    if (BIO_do_handshake(bio_ssl) <= 0) {
-        fprintf(stderr, "Error establishing SSL connection\n");
-        ERR_print_errors_fp(stderr);
-        goto done;
+        if (BIO_do_handshake(bio_ssl) <= 0) {
+            fprintf(stderr, "Error establishing SSL connection\n");
+            ERR_print_errors_fp(stderr);
+            goto done;
+        }
+
+        printf("SSL handshake with tunnel done\n");
     }
-
-    printf("SSL handshake with tunnel done\n");
 
     struct pollfd pds[2];
     pds[0].fd = sock;
@@ -708,6 +709,8 @@ static void *tunnel_thread(void *arg) {
     }
 done:
     printf("exiting tunnel thread!!\n");
+    if (ctx) SSL_CTX_free(ctx);
+    BIO_free_all(bio);
     deflateEnd(&zso);
     inflateEnd(&zsi);
     st_thread_exit(NULL);
@@ -844,12 +847,17 @@ static void parse_config(const gchar *conffile) {
     gchar *start_group = g_key_file_get_start_group(kf);
     printf("start group: %s\n", start_group);
 
+    /* tunnel listening address */
     gchar *tun_listen_address_str = g_key_file_get_value(kf, "tunnel", "listen_address", NULL);
     g_assert(tun_listen_address_str);
     if (strtoaddr(tun_listen_address_str, &tunnel_server->listen_addr) != 1) {
         printf("invalid address: %s\n", tun_listen_address_str);
     }
     g_free(tun_listen_address_str);
+
+    /* tunnel cert */
+    tunnel_cert_path = g_key_file_get_value(kf, "tunnel", "cert_file", NULL);
+    tunnel_pkey_path = g_key_file_get_value(kf, "tunnel", "private_key_file", NULL);
 
     gchar **groups = g_key_file_get_groups(kf, NULL);
     gchar *group = NULL;
@@ -861,20 +869,22 @@ static void parse_config(const gchar *conffile) {
             gchar *listen_address_str = g_key_file_get_value(kf, group, "listen_address", NULL);
             gchar *remote_address_str = g_key_file_get_value(kf, group, "remote_address", NULL);
             gchar *tunnel_address_str = g_key_file_get_value(kf, group, "tunnel_address", NULL);
-            if (!listen_address_str || !remote_address_str || !tunnel_address_str) continue;
+            if (!listen_address_str || !remote_address_str || !tunnel_address_str) {
+                goto free_address_strings;
+            }
             server_t *s = g_slice_new0(server_t);
-            /* TODO: leaks memory on error */
+            s->tunnel_secure = g_key_file_get_boolean(kf, group, "tunnel_secure", NULL);
             if (strtoaddr(listen_address_str, &s->listen_addr) != 1) {
                 printf("invalid address: %s\n", listen_address_str);
-                continue;
+                goto free_server;
             }
             if (strtoaddr(remote_address_str, &s->remote_addr) != 1) {
                 printf("invalid address: %s\n", remote_address_str);
-                continue;
+                goto free_server;
             }
             if (strtoaddr(tunnel_address_str, &s->tunnel_addr) != 1) {
                 printf("invalid address: %s\n", tunnel_address_str);
-                continue;
+                goto free_server;
             }
             char addrbuf[INET6_ADDRSTRLEN];
             printf("listening address: %s:%u\n",
@@ -884,9 +894,15 @@ static void parse_config(const gchar *conffile) {
                 ADDR_STRING(s->remote_addr, addrbuf, sizeof(addrbuf)),
                 ntohs(s->remote_addr.port));
             g_hash_table_insert(netmap, &s->listen_addr, s);
-            g_free(listen_address_str);
-            g_free(remote_address_str);
-            g_free(tunnel_address_str);
+            if (0) {
+                /* only go here when there is an error */
+free_server:
+                g_slice_free(server_t, s);
+            }
+free_address_strings:
+            if (listen_address_str) g_free(listen_address_str);
+            if (remote_address_str) g_free(remote_address_str);
+            if (tunnel_address_str) g_free(tunnel_address_str);
         }
     }
     g_free(start_group);
