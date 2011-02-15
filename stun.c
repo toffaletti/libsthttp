@@ -197,14 +197,28 @@ static ssize_t packet_bio_write(z_streamp strm, BIO *bio, struct packet_s *p) {
     return nw;
 }
 
-// TODO: need to write a BIO_read_fully()
+static ssize_t bio_read_fully(BIO *bio, void *buf, size_t size) {
+    ssize_t pos = 0;
+    size_t left = size;
+    while ((size_t)pos != size) {
+        ssize_t nr = BIO_read(bio, &((char *)buf)[pos], left);
+        if (nr > 0) {
+            pos += nr;
+            left -= nr;
+        } else {
+            pos = nr;
+            break;
+        }
+    }
+    return pos;
+}
 
 static ssize_t packet_bio_read(z_streamp strm, BIO *bio, struct packet_s *p) {
     //printf("bio read\n");
-    ssize_t nr = BIO_read(bio, p, PACKET_HEADER_SIZE);
+    ssize_t nr = bio_read_fully(bio, p, PACKET_HEADER_SIZE);
     if (nr <= 0) return -1;
     if (p->hdr.size) {
-        nr = BIO_read(bio, p->buf, p->hdr.size);
+        nr = bio_read_fully(bio, p->buf, p->hdr.size);
         if (nr != p->hdr.size) return -1;
     } else {
         // 0 bytes read because packet payload was empty
