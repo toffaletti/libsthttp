@@ -21,16 +21,19 @@ typedef union address_u address_t;
 
 struct netfd_state_s {
     st_netfd_t nfd;
-    /* fields from BIO_CONNECT */
+    /* fields for BIO_TYPE_CONNECT */
     char *param_hostname;
     char *param_port;
     u_int8_t ip[4];
     u_int16_t port;
+    /* field for BIO_TYPE_ACCEPT */
+    char *param_addr;
+    BIO *bio_chain;
 };
 typedef struct netfd_state_s netfd_state_t;
 
 static BIO_METHOD methods_st = {
-    BIO_TYPE_SOCKET | BIO_TYPE_CONNECT,
+    BIO_TYPE_SOCKET | BIO_TYPE_CONNECT | BIO_TYPE_ACCEPT,
     "state threads netfd",
     netfd_write,
     netfd_read,
@@ -50,6 +53,13 @@ BIO *BIO_new_netfd(int fd, int close_flag) {
     BIO *ret = BIO_new(BIO_s_netfd());
     if (ret == NULL) return NULL;
     BIO_set_fd(ret, fd, close_flag);
+    return ret;
+}
+
+BIO *BIO_new_netfd2(st_netfd_t nfd, int close_flag) {
+    BIO *ret = BIO_new(BIO_s_netfd());
+    if (ret == NULL) return NULL;
+    BIO_set_fp(ret, nfd, close_flag);
     return ret;
 }
 
@@ -77,6 +87,9 @@ static void _free_netfd(BIO *b) {
         OPENSSL_free(s->param_hostname);
     if (s->param_port != NULL)
         OPENSSL_free(s->param_port);
+    if (s->param_addr != NULL)
+        OPENSSL_free(s->param_addr);
+
 }
 
 static int netfd_free(BIO *b) {
@@ -206,6 +219,14 @@ static long netfd_ctrl(BIO *b, int cmd, long num, void *ptr) {
                 ret = -1;
             }
             break;
+        case BIO_C_SET_FILE_PTR:
+            _free_netfd(b);
+            b->num = st_netfd_fileno(ptr);
+            b->shutdown = (int)num;
+            b->init = 1;
+            s->nfd = ptr;
+            break;
+
         case BIO_CTRL_GET_CLOSE:
             ret = b->shutdown;
             break;
@@ -270,6 +291,23 @@ static long netfd_ctrl(BIO *b, int cmd, long num, void *ptr) {
                 }
             }
             break;
+        case BIO_C_SET_ACCEPT:
+            if (ptr != NULL) {
+                if (num == 0) {
+                    b->init = 1;
+                    if (s->param_addr != NULL)
+                        OPENSSL_free(s->param_addr);
+                    s->param_addr = BUF_strdup(ptr);
+                } else if (num == 1) {
+                    // no blocking io with state-threads
+                    /*data->accept_nbio = (ptr != NULL);*/
+                } else if (num == 2) {
+                    if (s->bio_chain != NULL)
+                        BIO_free(s->bio_chain);
+                    s->bio_chain = (BIO *)ptr;
+                }
+            }
+            break;
         case BIO_C_DO_STATE_MACHINE:
             ret = netfd_connect(b);
             break;
@@ -279,5 +317,4 @@ static long netfd_ctrl(BIO *b, int cmd, long num, void *ptr) {
     }
     return ret;
 }
-
 

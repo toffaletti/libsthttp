@@ -7,6 +7,9 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include "st.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include "st_ssl.h"
 #include <zlib.h>
 
 union address_u {
@@ -154,6 +157,54 @@ void queue_push_notify(int fd, GAsyncQueue *q, gpointer data) {
     g_async_queue_push_unlocked(q, data);
     g_async_queue_unlock(q);
     if (len == 0) { write(fd, (void*)"\x01", 1); }
+}
+
+static ssize_t packet_bio_write(z_streamp strm, BIO *bio, struct packet_s *p) {
+    char buf[PACKET_DATA_SIZE*2];
+    ssize_t nw = 0;
+    if (p->hdr.size) {
+        strm->next_in = (Bytef *)p->buf;
+        strm->avail_in = p->hdr.size;
+        strm->next_out = (Bytef *)buf;
+        strm->avail_out = sizeof(buf);
+        int status = deflate(strm, Z_FINISH);
+        g_assert(status == Z_STREAM_END);
+        if (strm->total_out < p->hdr.size) {
+            printf("< deflate total out: %zu/%zu\n", strm->total_out, p->hdr.size);
+            p->hdr.flags |= TUN_FLAG_COMPRESSED;
+            p->hdr.size = strm->total_out;
+            memcpy(p->buf, buf, strm->total_out);
+        }
+        nw = BIO_write(bio, p, PACKET_HEADER_SIZE+p->hdr.size);
+        deflateReset(strm);
+    } else {
+        nw = BIO_write(bio, p, PACKET_HEADER_SIZE+p->hdr.size);
+    }
+    return nw;
+}
+
+static ssize_t packet_bio_read(z_streamp strm, BIO *bio, struct packet_s *p) {
+    ssize_t nr = BIO_read(bio, p, PACKET_HEADER_SIZE);
+    if (nr <= 0) return -1;
+    nr = BIO_read(bio, p->buf, p->hdr.size);
+    if (nr != p->hdr.size) return -1;
+    if (p->hdr.flags & TUN_FLAG_COMPRESSED) {
+        char buf[PACKET_DATA_SIZE];
+        strm->next_in = (Bytef *)p->buf;
+        strm->avail_in = p->hdr.size;
+        strm->next_out = (Bytef *)buf;
+        strm->avail_out = sizeof(buf);
+        int status = inflate(strm, Z_FINISH);
+        //printf("status: %d msg: %s\n", status, strm->msg);
+        g_assert(status == Z_STREAM_END);
+        printf("< inflate %zu/%zu\n", strm->total_out, p->hdr.size);
+        p->hdr.flags &= TUN_FLAG_COMPRESSED;
+        p->hdr.size = strm->total_out;
+        memcpy(p->buf, buf, p->hdr.size);
+        inflateReset(strm);
+        return p->hdr.size;
+    }
+    return nr;
 }
 
 static ssize_t packet_write(z_streamp strm, st_netfd_t nfd, struct packet_s *p) {
@@ -359,10 +410,37 @@ done:
 
 static void *tunnel_handler(void *arg) {
     st_netfd_t client_nfd = (st_netfd_t)arg;
+    BIO *bio_nfd = BIO_new_netfd2(client_nfd, BIO_CLOSE);
     address_t local_addr;
     int status;
     struct pollfd pds[2];
     socklen_t slen;
+
+    SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
+
+    // http://h71000.www7.hp.com/doc/83final/ba554_90007/ch04s03.html
+    if (!SSL_CTX_use_certificate_file(ctx, "server.pem", SSL_FILETYPE_PEM)) {
+        fprintf(stderr, "error loading cert file\n");
+        ERR_print_errors_fp(stderr);
+        goto done;
+    }
+    if (!SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM)) {
+        fprintf(stderr, "error loading private key file\n");
+        ERR_print_errors_fp(stderr);
+        goto done;
+    }
+
+    BIO *bio_ssl = BIO_new_ssl(ctx, 0);
+    //BIO *bio = bio_nfd;
+    BIO *bio = BIO_push(bio_ssl, bio_nfd);
+
+    if (BIO_do_handshake(bio_ssl) <= 0) {
+        fprintf(stderr, "Error establishing SSL with accept socket\n");
+        ERR_print_errors_fp(stderr);
+        goto done;
+    }
+
+    printf("SSL handshake with client done\n");
 
     z_stream zso;
     memset(&zso, 0, sizeof(zso));
@@ -397,7 +475,8 @@ static void *tunnel_handler(void *arg) {
 
         if (pds[0].revents & POLLIN) {
             struct packet_s *p = g_slice_new(struct packet_s);
-            ssize_t nr = packet_read(&zsi, client_nfd, p);
+            //ssize_t nr = packet_read(&zsi, client_nfd, p);
+            ssize_t nr = packet_bio_read(&zsi, bio, p);
             if (nr < 0) { g_slice_free(struct packet_s, p); break; }
             //printf("tunnel slave read %zd out of %d\n", nr, p->hdr.size);
             queue_push_notify(s->write_fd, s->write_queue, p);
@@ -414,7 +493,9 @@ static void *tunnel_handler(void *arg) {
                 //    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
                 //    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
                 //    p->hdr.size);
-                ssize_t nw = packet_write(&zso, client_nfd, p);
+
+                //ssize_t nw = packet_write(&zso, client_nfd, p);
+                ssize_t nw = packet_bio_write(&zso, bio, p);
                 g_slice_free(struct packet_s, p);
                 if (nw <= 0) goto done;
             }
@@ -515,7 +596,8 @@ static void *tunnel_thread(void *arg) {
 
     address_t rmt_addr;
     int sock;
-    st_netfd_t rmt_nfd;
+    //st_netfd_t rmt_nfd;
+    BIO *bio_nfd = NULL;
 
     addr_to_address(&s->tunnel_addr, &rmt_addr);
 
@@ -523,6 +605,9 @@ static void *tunnel_thread(void *arg) {
     if ((sock = socket(rmt_addr.sa.sa_family, SOCK_STREAM, 0)) < 0) {
         goto done;
     }
+
+    st_netfd_t rmt_nfd;
+#if 0
     if ((rmt_nfd = st_netfd_open_socket(sock)) == NULL) {
         close(sock);
         goto done;
@@ -535,8 +620,34 @@ static void *tunnel_thread(void *arg) {
         printf("sleeping before reconnecting tunnel\n");
         st_sleep(1);
     }
+#else
+    bio_nfd = BIO_new_netfd(sock, BIO_CLOSE);
+    BIO_get_fp(bio_nfd, &rmt_nfd);
+
+    for (;;) {
+        if (st_connect(rmt_nfd, (struct sockaddr *)&rmt_addr,
+              sizeof(rmt_addr), ST_UTIME_NO_TIMEOUT) == 0) {
+            break;
+        }
+        printf("sleeping before reconnecting tunnel\n");
+        st_sleep(1);
+    }
+#endif
     printf("connected to tunnel!\n");
 
+    SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());
+
+    BIO *bio_ssl = BIO_new_ssl(ctx, 1);
+    //BIO *bio = bio_nfd;
+    BIO *bio = BIO_push(bio_ssl, bio_nfd);
+
+    if (BIO_do_handshake(bio_ssl) <= 0) {
+        fprintf(stderr, "Error establishing SSL connection\n");
+        ERR_print_errors_fp(stderr);
+        goto done;
+    }
+
+    printf("SSL handshake with tunnel done\n");
 
     struct pollfd pds[2];
     pds[0].fd = sock;
@@ -551,7 +662,8 @@ static void *tunnel_thread(void *arg) {
         if (pds[0].revents & POLLIN) {
             //printf("data to be read from tunnel\n");
             struct packet_s *p = g_slice_new(struct packet_s);
-            ssize_t nr = packet_read(&zsi, rmt_nfd, p);
+            //ssize_t nr = packet_read(&zsi, rmt_nfd, p);
+            ssize_t nr = packet_bio_read(&zsi, bio, p);
             if (nr < 0) { g_slice_free(struct packet_s, p); break; }
             queue_push_notify(s->read_fd, s->read_queue, p);
         }
@@ -560,14 +672,16 @@ static void *tunnel_thread(void *arg) {
             char tmp[1];
             read(s->read_fd, tmp, 1);
             struct packet_s *p;
-            //char laddrbuf[INET6_ADDRSTRLEN];
-            //char raddrbuf[INET6_ADDRSTRLEN];
             while ((p = g_async_queue_try_pop(s->write_queue))) {
-                //printf("packet local: %s:%u remote: %s:%u size: %u\n",
-                //    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
-                //    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
-                //    p->hdr.size);
-                ssize_t nw = packet_write(&zso, rmt_nfd, p);
+                char laddrbuf[INET6_ADDRSTRLEN];
+                char raddrbuf[INET6_ADDRSTRLEN];
+                printf("packet local: %s:%u remote: %s:%u size: %u\n",
+                    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
+                    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
+                    p->hdr.size);
+
+                //ssize_t nw = packet_write(&zso, rmt_nfd, p);
+                ssize_t nw = packet_bio_write(&zso, bio, p);
                 g_slice_free(struct packet_s, p);
                 if (nw <= 0) goto done;
             }
@@ -775,17 +889,22 @@ static GOptionEntry entires[] = {
 int main(int argc, char *argv[]) {
     g_thread_init(NULL);
 
+    SSL_load_error_strings();
+    SSL_library_init();
+
     if (st_init() < 0) {
         perror("st_init");
         exit(1);
     }
 
+#if 0
     printf("sizeof(addr_t) = %zu\n", sizeof(addr_t));
     printf("sizeof(struct sockaddr) = %zu\n", sizeof(struct sockaddr));
     printf("sizeof(struct sockaddr_in) = %zu\n", sizeof(struct sockaddr_in));
     printf("sizeof(struct sockaddr_in6) = %zu\n", sizeof(struct sockaddr_in6));
     printf("sizeof(struct sockaddr_storage) = %zu\n", sizeof(struct sockaddr_storage));
     printf("sizeof(address_t) = %zu\n", sizeof(address_t));
+#endif
 
     int sockets[2];
     int status;

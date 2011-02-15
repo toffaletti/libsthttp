@@ -39,8 +39,8 @@ add_executable(app app.c)
 target_link_libraries(app glib-2.0 st)
 add_dependencies(app st)
 
-add_executable(stun stun.c cares-st.c http_message.c http_stream.c)
-target_link_libraries(stun glib-2.0 gthread-2.0 st cares uri http11 http11client z)
+add_executable(stun stun.c cares-st.c http_message.c http_stream.c bio_netfd.c)
+target_link_libraries(stun glib-2.0 gthread-2.0 st cares uri http11 http11client z ssl)
 add_dependencies(stun st cares uri http11 http11client)
 
 add_executable(st-ssl ssl.c cares-st.c bio_netfd.c http_message.c http_stream.c)
