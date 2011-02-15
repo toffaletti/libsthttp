@@ -162,6 +162,7 @@ void queue_push_notify(int fd, GAsyncQueue *q, gpointer data) {
 static ssize_t packet_bio_write(z_streamp strm, BIO *bio, struct packet_s *p) {
     char buf[PACKET_DATA_SIZE*2];
     ssize_t nw = 0;
+    //printf("bio write: %zu\n", p->hdr.size);
     if (p->hdr.size) {
         strm->next_in = (Bytef *)p->buf;
         strm->avail_in = p->hdr.size;
@@ -170,7 +171,10 @@ static ssize_t packet_bio_write(z_streamp strm, BIO *bio, struct packet_s *p) {
         int status = deflate(strm, Z_FINISH);
         g_assert(status == Z_STREAM_END);
         if (strm->total_out < p->hdr.size) {
-            printf("< deflate total out: %zu/%zu\n", strm->total_out, p->hdr.size);
+            printf("< deflate total out: %zu/%zu saved %.2f%%\n",
+                strm->total_out,
+                p->hdr.size,
+                (1.0 - (strm->total_out / (float)p->hdr.size)) * 100.0);
             p->hdr.flags |= TUN_FLAG_COMPRESSED;
             p->hdr.size = strm->total_out;
             memcpy(p->buf, buf, strm->total_out);
@@ -184,9 +188,11 @@ static ssize_t packet_bio_write(z_streamp strm, BIO *bio, struct packet_s *p) {
 }
 
 static ssize_t packet_bio_read(z_streamp strm, BIO *bio, struct packet_s *p) {
+    //printf("bio read\n");
     ssize_t nr = BIO_read(bio, p, PACKET_HEADER_SIZE);
     if (nr <= 0) return -1;
     nr = BIO_read(bio, p->buf, p->hdr.size);
+    //printf("bio read hdr size: %zd\n", nr);
     if (nr != p->hdr.size) return -1;
     if (p->hdr.flags & TUN_FLAG_COMPRESSED) {
         char buf[PACKET_DATA_SIZE];
@@ -474,12 +480,20 @@ static void *tunnel_handler(void *arg) {
         if (st_poll(pds, 2, ST_UTIME_NO_TIMEOUT) <= 0) break;
 
         if (pds[0].revents & POLLIN) {
-            struct packet_s *p = g_slice_new(struct packet_s);
-            //ssize_t nr = packet_read(&zsi, client_nfd, p);
-            ssize_t nr = packet_bio_read(&zsi, bio, p);
-            if (nr < 0) { g_slice_free(struct packet_s, p); break; }
-            //printf("tunnel slave read %zd out of %d\n", nr, p->hdr.size);
-            queue_push_notify(s->write_fd, s->write_queue, p);
+            do {
+                //printf("tunnel server read\n");
+                struct packet_s *p = g_slice_new(struct packet_s);
+                //ssize_t nr = packet_read(&zsi, client_nfd, p);
+                ssize_t nr = packet_bio_read(&zsi, bio, p);
+                if (nr < 0) { g_slice_free(struct packet_s, p); break; }
+                //printf("tunnel slave read %zd out of %d\n", nr, p->hdr.size);
+                //printf("bio pending: %zd\n", BIO_ctrl_pending(bio));
+                queue_push_notify(s->write_fd, s->write_queue, p);
+                /* BIO ssl seems to buffer data, so the loop with 
+                 * BIO_ctrl_pending will help avoid
+                 * getting stuck in st_poll while data is buffered
+                 */
+            } while (BIO_ctrl_pending(bio));
         }
 
         if (pds[1].revents & POLLIN) {
@@ -660,12 +674,17 @@ static void *tunnel_thread(void *arg) {
         if (st_poll(pds, 2, ST_UTIME_NO_TIMEOUT) <= 0) break;
 
         if (pds[0].revents & POLLIN) {
-            //printf("data to be read from tunnel\n");
-            struct packet_s *p = g_slice_new(struct packet_s);
-            //ssize_t nr = packet_read(&zsi, rmt_nfd, p);
-            ssize_t nr = packet_bio_read(&zsi, bio, p);
-            if (nr < 0) { g_slice_free(struct packet_s, p); break; }
-            queue_push_notify(s->read_fd, s->read_queue, p);
+            do {
+                struct packet_s *p = g_slice_new(struct packet_s);
+                //ssize_t nr = packet_read(&zsi, rmt_nfd, p);
+                ssize_t nr = packet_bio_read(&zsi, bio, p);
+                if (nr < 0) { g_slice_free(struct packet_s, p); break; }
+                queue_push_notify(s->read_fd, s->read_queue, p);
+            /* BIO ssl seems to buffer data, so the loop with 
+             * BIO_ctrl_pending will help avoid
+             * getting stuck in st_poll while data is buffered
+             */
+            } while (BIO_ctrl_pending(bio));
         }
 
         if (pds[1].revents & POLLIN) {
@@ -673,12 +692,12 @@ static void *tunnel_thread(void *arg) {
             read(s->read_fd, tmp, 1);
             struct packet_s *p;
             while ((p = g_async_queue_try_pop(s->write_queue))) {
-                char laddrbuf[INET6_ADDRSTRLEN];
-                char raddrbuf[INET6_ADDRSTRLEN];
-                printf("packet local: %s:%u remote: %s:%u size: %u\n",
-                    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
-                    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
-                    p->hdr.size);
+                //char laddrbuf[INET6_ADDRSTRLEN];
+                //char raddrbuf[INET6_ADDRSTRLEN];
+                //printf("packet local: %s:%u remote: %s:%u size: %u\n",
+                //    ADDR_STRING(p->hdr.laddr, laddrbuf, sizeof(laddrbuf)), ntohs(p->hdr.laddr.port),
+                //    ADDR_STRING(p->hdr.raddr, raddrbuf, sizeof(raddrbuf)), ntohs(p->hdr.raddr.port),
+                //    p->hdr.size);
 
                 //ssize_t nw = packet_write(&zso, rmt_nfd, p);
                 ssize_t nw = packet_bio_write(&zso, bio, p);
