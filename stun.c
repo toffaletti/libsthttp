@@ -778,6 +778,7 @@ static void *write_in_sthread(void *arg) {
     for (;;) {
         pds[0].revents = 0;
         if (st_poll(pds, 1, ST_UTIME_NO_TIMEOUT) <= 0) break;
+        /* TODO: this seems to be breaking, causing the queue size to grow large */
 
         if (pds[0].revents & POLLIN) {
             //printf("read queue notified\n");
