@@ -11,17 +11,20 @@
 
 void *handle_connection(void *arg) {
   st_netfd_t client_nfd = (st_netfd_t)arg;
-  struct http_stream *s = http_stream_create(HTTP_SERVER, SEC2USEC(30));
+  struct http_stream *s = http_stream_create(HTTP_SERVER, SEC2USEC(5));
   char buf[4*1024];
   int error = 0;
   struct http_stream *cs = NULL;
   uri_t *u = uri_new();
+  int should_close = 1;
   for (;;) {
+    should_close = 1;
     if (s->status != HTTP_STREAM_OK) break;
-    memset(&u, 0, sizeof(u));
     cs = NULL;
     error = 0;
+    s->timeout = SEC2USEC(5);
     int status = http_stream_request_read(s, client_nfd);
+    s->timeout = SEC2USEC(30); // longer timeout for the rest
     if (status != HTTP_STREAM_OK) {
       if (s->status == HTTP_STREAM_CLOSED || s->status == HTTP_STREAM_TIMEOUT) {
         error = 1;
@@ -109,8 +112,17 @@ void *handle_connection(void *arg) {
       }
     }
 release:
+    if (!error) {
+        if ((g_strcmp0("HTTP/1.1", s->req->http_version) == 0) &&
+          (g_strcmp0(http_request_header_getstr(s->req, "Connection"), "close") != 0)) {
+          // if HTTP/1.1 client and no Connection: close, then don't close
+          should_close = 0;
+        } else if (g_strcmp0(http_request_header_getstr(s->req, "Connection"), "keepalive") == 0) {
+          should_close = 0;
+        }
+    }
     http_request_clear(s->req);
-    uri_free(u);
+    uri_clear(u);
     if (cs) http_stream_close(cs);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
     if (error) {
@@ -125,8 +137,10 @@ release:
       }
       break;
     }
+    if (should_close) break;
   }
-  fprintf(stderr, "exiting handle_connection\n");
+  fprintf(stderr, "exiting handle_connection (should_close: %u)\n", should_close);
+  uri_free(u);
   http_stream_close(s);
   return NULL;
 }
