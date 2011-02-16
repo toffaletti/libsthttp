@@ -951,7 +951,7 @@ free_key_file:
 }
 
 
-static const gchar *conffile = "stun.conf";
+static const gchar *conffile = "leytunnel.conf";
 
 static GOptionEntry entires[] = {
     {"config", 'c', 0, G_OPTION_ARG_FILENAME, &conffile, "config file path", NULL},
@@ -988,7 +988,7 @@ int main(int argc, char *argv[]) {
     tunnel_server = g_slice_new0(server_t);
 
     GError *error = NULL;
-    GOptionContext *optctx = g_option_context_new("stun");
+    GOptionContext *optctx = g_option_context_new("leytunnel");
 
     g_option_context_add_main_entries(optctx, entires, NULL);
     if (!g_option_context_parse(optctx, &argc, &argv, &error)) {
