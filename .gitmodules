@@ -1,0 +1,6 @@
+[submodule "extern/libguri"]
+	path = extern/libguri
+	url = git://github.com/toffaletti/libguri.git
+[submodule "extern/state-threads"]
+	path = extern/state-threads
+	url = git://github.com/toffaletti/state-threads.git
