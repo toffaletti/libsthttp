@@ -32,7 +32,3 @@ add_executable(fget fget.c ${STX_DIR}/cares-st.c http_message.c http_stream.c)
 target_link_libraries(fget glib-2.0 st cares guri http11 http11client)
 add_dependencies(fget st cares guri http11 http11client)
 
-add_executable(app app.c)
-target_link_libraries(app glib-2.0 st)
-add_dependencies(app st)
-
