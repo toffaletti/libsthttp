@@ -27,18 +27,20 @@ include_directories(/usr/include/glib-2.0/ /usr/lib/glib-2.0/include/)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -std=gnu99 -g3 -ggdb -Wall -Wextra -pedantic")
 
-add_executable(httpd httpd.c ${STX_DIR}/cares-st.c http_message.c http_stream.c)
-target_link_libraries(httpd glib-2.0 st cares guri http11 http11client)
-add_dependencies(httpd st cares guri http11 http11client)
+add_library(libsthttp ${STX_DIR}/cares-st.c http_message.c http_stream.c)
+target_link_libraries(libsthttp glib-2.0 st cares guri http11 http11client)
 
-add_executable(http_proxy http_proxy.c ${STX_DIR}/cares-st.c http_message.c http_stream.c)
-target_link_libraries(http_proxy glib-2.0 st cares guri http11 http11client)
-add_dependencies(http_proxy st cares guri http11 http11client)
+add_executable(httpd httpd.c)
+target_link_libraries(httpd libsthttp)
+#add_dependencies(httpd st cares guri http11 http11client)
 
-add_executable(test-http-message test_http_message.c http_message.c)
-target_link_libraries(test-http-message glib-2.0 http11 http11client)
+add_executable(http_proxy http_proxy.c)
+target_link_libraries(http_proxy libsthttp)
+#add_dependencies(http_proxy st cares guri http11 http11client)
 
-add_executable(fget fget.c ${STX_DIR}/cares-st.c http_message.c http_stream.c)
-target_link_libraries(fget glib-2.0 st cares guri http11 http11client)
-add_dependencies(fget st cares guri http11 http11client)
+add_executable(test-http-message test_http_message.c)
+target_link_libraries(test-http-message libsthttp)
+
+add_executable(fget fget.c)
+target_link_libraries(fget libsthttp)
 
