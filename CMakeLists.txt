@@ -4,11 +4,19 @@ project(fw)
 add_subdirectory(http11)
 add_subdirectory(http11_client)
 
-add_subdirectory(extern/libguri)
-add_subdirectory(extern/state-threads)
+# if these don't exist, we expect the user to provide them another way
+if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/libguri/CMakeLists.txt)
+    add_subdirectory(extern/libguri)
+endif (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/libguri/CMakeLists.txt)
+if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/state-threads/CMakeLists.txt)
+    add_subdirectory(extern/state-threads)
+endif (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/state-threads/CMakeLists.txt)
 
 # st_dns and st_ssl extensions are now here
-set(STX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/state-threads/extensions)
+if (NOT STX_DIR)
+    set(STX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/state-threads/extensions)
+    message("no stx dir found, set to ${STX_DIR}")
+endif (NOT STX_DIR)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/extern)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/extern/libguri)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/extern/state-threads)
