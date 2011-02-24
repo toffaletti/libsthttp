@@ -21,13 +21,15 @@ void *handle_connection(void *arg) {
       ssize_t nr = sizeof(buf);
       int status = http_stream_read(s, buf, &nr);
       fprintf(stderr, "http_stream_read nr: %zd\n", nr);
-      if (status != HTTP_STREAM_OK) break;
+      if (nr < 0 || status != HTTP_STREAM_OK) { goto done; }
+      if (nr == 0) break;
       /*fwrite(buf, sizeof(char), nr, stdout);*/
       total += nr;
     }
     fprintf(stderr, "http_stream_read total: %zu\n", total);
 
     http_response_clear(s->resp);
+    s->resp->http_version = "HTTP/1.1";
     s->resp->status_code = 200;
     s->resp->reason = "OK";
     http_response_header_append(s->resp, "Content-type", "text/html");
@@ -37,6 +39,7 @@ void *handle_connection(void *arg) {
     fprintf(stderr, "http_stream_response_send: %zd\n", nw);
     /* TODO: break loop if HTTP/1.0 and not keep-alive */
   }
+done:
   fprintf(stderr, "exiting handle_connection\n");
   http_stream_close(s);
   return NULL;
